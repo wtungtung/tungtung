@@ -1,5 +1,5 @@
 local genv = (type(getgenv) == "function" and getgenv()) or _G
-if genv.XuantamHalloweenGames_Running then return end
+if genv.tungtungHalloweenGames_Running then return end
 genv.tungtungHalloweenGames_Running = true
 
 local Players = game:GetService("Players")
