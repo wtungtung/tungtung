@@ -116,7 +116,7 @@ ToggleButton.Parent = ToggleFrame
 ToggleButton.BackgroundTransparency = 1
 ToggleButton.Size = UDim2.new(1, 0, 1, 0)
 ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Text = Flags.WhiteScreen and "🛡️ Màn Trắng: [ĐANG BẬT]" or "🛡️ Màn Trắng: [ĐÃ TẮT]"
+ToggleButton.Text = Flags.WhiteScreen and "🛡️ hanoi: [ĐANG BẬT]" or "🛡️ hanoi: [ĐÃ TẮT]"
 ToggleButton.TextColor3 = Flags.WhiteScreen and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 80, 80)
 ToggleButton.TextSize = 12
 
