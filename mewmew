@@ -1,8 +1,12 @@
--- 1. Cấu hình khởi chạy
--- Ghi thời điểm khởi động trước khi tải các module.
-local scriptStartedAt = os.clock()
+-- ============================================================================
+-- ROBLOX HUB - MODERN CUSTOM UI EDITION
+-- Tương thích 100% với các module GitHub, Launcher (RobloxHubConfig) & Timed Hop
+-- ============================================================================
 
--- Launcher có thể truyền cấu hình riêng cho lần chạy này.
+-- 1. Cấu hình khởi chạy & Anti-AFK
+local scriptStartedAt = os.clock()
+local lastAntiAfkAt = nil
+
 local environment = type(getgenv) == "function" and getgenv() or _G
 local launchConfig = environment.RobloxHubConfig
 environment.RobloxHubConfig = nil
@@ -10,27 +14,32 @@ if type(launchConfig) ~= "table" then launchConfig = nil end
 local launchToggles = launchConfig and type(launchConfig.toggles) == "table" and launchConfig.toggles or {}
 local startupActions = {}
 
--- Anti-AFK / Gửi phím Space mỗi phút.
+-- Dọn tài nguyên UI / kết nối của lần chạy trước
 do
-    -- Dừng vòng nhảy từ bản cũ.
+    if environment.RobloxHubCustomGui then
+        pcall(function() environment.RobloxHubCustomGui:Destroy() end)
+        environment.RobloxHubCustomGui = nil
+    end
+    if environment.RobloxHubStatsConnection then
+        pcall(function() environment.RobloxHubStatsConnection:Disconnect() end)
+        environment.RobloxHubStatsConnection = nil
+    end
+    if environment.RobloxHubHotkeyConnection then
+        pcall(function() environment.RobloxHubHotkeyConnection:Disconnect() end)
+        environment.RobloxHubHotkeyConnection = nil
+    end
     if environment.RobloxHubAntiAfkJob then
         pcall(task.cancel, environment.RobloxHubAntiAfkJob)
         environment.RobloxHubAntiAfkJob = nil
     end
-
-    -- Gỡ kết nối anti-AFK của lần chạy trước.
     if environment.RobloxHubAntiAfkConnection then
         environment.RobloxHubAntiAfkConnection:Disconnect()
         environment.RobloxHubAntiAfkConnection = nil
     end
-
-    -- Gỡ kết nối theo dõi idle của lần chạy trước.
     if environment.RobloxHubAntiAfkIdleConnection then
         environment.RobloxHubAntiAfkIdleConnection:Disconnect()
         environment.RobloxHubAntiAfkIdleConnection = nil
     end
-
-    -- Dừng đoạn exec thử nếu nó vẫn đang gửi phím.
     if type(environment.StopAfkTest) == "function" then
         environment.StopAfkTest()
         environment.StopAfkTest = nil
@@ -54,14 +63,12 @@ do
 
     if setSpace and (not launchConfig or launchConfig.antiAfk ~= false) then
         local player = game:GetService("Players").LocalPlayer
-        -- Báo số giây Roblox vẫn tính là idle.
         environment.RobloxHubAntiAfkIdleConnection = player.Idled:Connect(function(seconds)
             warn(("[Anti-AFK] Roblox ghi nhận idle %ds."):format(math.floor(seconds)))
         end)
 
         local nextInputAt = os.clock() + 60
         local runService = game:GetService("RunService")
-        -- Bỏ qua lượt gửi khi input đang được dùng ở nơi khác.
         environment.RobloxHubAntiAfkConnection = runService.Heartbeat:Connect(function()
             local now = os.clock()
             if now < nextInputAt then return end
@@ -77,6 +84,7 @@ do
                 setSpace(true)
                 task.wait(0.08)
                 setSpace(false)
+                lastAntiAfkAt = os.clock()
             end)
             if not ok then warn("[Anti-AFK] Gửi Space lỗi: " .. tostring(err)) end
         end)
@@ -85,8 +93,9 @@ do
     end
 end
 
--- 2. Tải các module tính năng
--- Thêm một URL Raw vào danh sách cho mỗi file xử lý mới.
+-- ============================================================================
+-- 2. Tải các module tính năng từ GitHub
+-- ============================================================================
 local urls = {
     "https://raw.githubusercontent.com/duyvip342/dyu/refs/heads/main/farm.lua",
     "https://raw.githubusercontent.com/duyvip342/dyu/refs/heads/main/rank.lua",
@@ -99,10 +108,8 @@ local urls = {
     "https://raw.githubusercontent.com/duyvip342/dyu/main/setting.lua",
 }
 
--- Gộp tính năng từ các module theo tên flag.
 local features = {}
 
--- Tải lại module nếu CDN trả trang lỗi thay vì mã Lua.
 local function loadRemoteModule(url, filename)
     local lastError
     for attempt = 1, 3 do
@@ -149,7 +156,6 @@ for _, url in ipairs(urls) do
     end
 end
 
--- Danh sách do launcher quản lý; không chạy worker khi thiết lập catalog.
 if launchConfig and type(launchConfig.lists) == "table" then
     local lists = launchConfig.lists
     local resolve = loadRemoteModule("https://raw.githubusercontent.com/duyvip342/dyu/main/item_catalog.lua", "item_catalog.lua")()
@@ -168,57 +174,1022 @@ if launchConfig and type(launchConfig.lists) == "table" then
     end
 end
 
--- Auto Hunt chỉ có một toggle UI; các bộ lọc đọc từ launcher.
 if features.EventAutoHuntPet then
     features.EventAutoHuntPet.configure(launchConfig and launchConfig.eventHunt)
 elseif launchConfig and launchConfig.eventHunt then
     error("event.lua chưa hỗ trợ eventHunt; cần cập nhật module cùng UI")
 end
 
--- 3. Tạo cửa sổ và các tab
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+-- ============================================================================
+-- 3. Hệ thống UI Modern tự dựng + Bộ quản lý Control (Thay Rayfield & ui_controls)
+-- ============================================================================
+local function buildModernHubUI(options)
+    local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
+    local HttpService = game:GetService("HttpService")
+    local CoreGui = game:GetService("CoreGui")
 
-local window = Rayfield:CreateWindow({
-    name = "MewHub",
-    sidebarLayout = true,
-    configuration = {
-        autoSave = launchConfig == nil,
-        autoLoad = launchConfig == nil,
-        fileName = "RobloxHubUI",
-    },
-})
+    local Theme = {
+        Bg = Color3.fromRGB(14, 16, 22),
+        Sidebar = Color3.fromRGB(19, 22, 30),
+        Topbar = Color3.fromRGB(22, 26, 36),
+        Card = Color3.fromRGB(26, 31, 43),
+        CardHover = Color3.fromRGB(33, 39, 55),
+        Input = Color3.fromRGB(17, 20, 28),
+        Border = Color3.fromRGB(46, 54, 74),
+        Accent = Color3.fromRGB(92, 108, 255),
+        AccentGlow = Color3.fromRGB(56, 189, 248),
+        Success = Color3.fromRGB(46, 204, 113),
+        Danger = Color3.fromRGB(239, 68, 68),
+        Text = Color3.fromRGB(241, 245, 255),
+        Muted = Color3.fromRGB(148, 163, 184),
+    }
 
--- Khai báo các tab theo thứ tự xuất hiện trên menu.
--- Nạp registry cùng bản sửa thứ tự section (cần cập nhật cả hai file lên GitHub).
--- Không dùng commit registry cũ vì commit đó còn tự chuyển toggle sang nhóm khác.
-local controlFactory = loadRemoteModule("https://raw.githubusercontent.com/duyvip342/dyu/main/ui_controls.lua?layout=source-order-20261121", "ui_controls.lua")()
-local ui = controlFactory(window)
-environment.RobloxHubUI = ui
-local function createTab(name)
-    return ui:WrapTab(window:CreateTab({ name = name }), name)
+    local function tween(obj, props, duration)
+        TweenService:Create(
+            obj,
+            TweenInfo.new(duration or 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            props
+        ):Play()
+    end
+
+    local function create(className, props, parent)
+        local inst = Instance.new(className)
+        for k, v in pairs(props) do inst[k] = v end
+        if parent then inst.Parent = parent end
+        return inst
+    end
+
+    local function addCorner(parent, radius)
+        return create("UICorner", { CornerRadius = UDim.new(0, radius or 8) }, parent)
+    end
+
+    local function addStroke(parent, color, thickness, transparency)
+        return create("UIStroke", {
+            Color = color or Theme.Border,
+            Thickness = thickness or 1,
+            Transparency = transparency or 0,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        }, parent)
+    end
+
+    local function makeDraggable(dragHandle, targetFrame)
+        local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+        dragHandle.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = targetFrame.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+        dragHandle.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                local delta = input.Position - dragStart
+                targetFrame.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+
+    -- Chọn nơi gắn ScreenGui an toàn cho đa Executor
+    local guiParent
+    if type(gethui) == "function" then
+        local ok, res = pcall(gethui)
+        if ok and res then guiParent = res end
+    end
+    if not guiParent then
+        local ok = pcall(function() return CoreGui.Name end)
+        guiParent = ok and CoreGui or Players.LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    local screenGui = create("ScreenGui", {
+        Name = "RobloxHubModernUI",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        IgnoreGuiInset = true,
+    }, guiParent)
+    environment.RobloxHubCustomGui = screenGui
+
+    -- Cửa sổ chính
+    local mainFrame = create("Frame", {
+        Name = "MainWindow",
+        Size = UDim2.fromOffset(720, 470),
+        Position = UDim2.new(0.5, -360, 0.5, -235),
+        BackgroundColor3 = Theme.Bg,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    }, screenGui)
+    addCorner(mainFrame, 12)
+    addStroke(mainFrame, Theme.Border, 1)
+
+    -- Nút nổi mở lại menu khi thu nhỏ
+    local miniPill = create("TextButton", {
+        Name = "MiniToggle",
+        Size = UDim2.fromOffset(118, 34),
+        Position = UDim2.new(0, 16, 0, 72),
+        BackgroundColor3 = Theme.Topbar,
+        Text = "  Roblox Hub",
+        TextColor3 = Theme.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 13,
+        AutoButtonColor = false,
+        Visible = false,
+    }, screenGui)
+    addCorner(miniPill, 17)
+    addStroke(miniPill, Theme.Accent, 1.2)
+    create("Frame", {
+        Size = UDim2.fromOffset(8, 8),
+        Position = UDim2.new(0, 12, 0.5, -4),
+        BackgroundColor3 = Theme.Success,
+        BorderSizePixel = 0,
+    }, miniPill)
+    addCorner(miniPill:FindFirstChildOfClass("Frame"), 4)
+    makeDraggable(miniPill, miniPill)
+
+    -- Thanh tiêu đề (Topbar)
+    local topbar = create("Frame", {
+        Name = "Topbar",
+        Size = UDim2.new(1, 0, 0, 48),
+        BackgroundColor3 = Theme.Topbar,
+        BorderSizePixel = 0,
+    }, mainFrame)
+    makeDraggable(topbar, mainFrame)
+
+    create("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 1, -1),
+        BackgroundColor3 = Theme.Border,
+        BorderSizePixel = 0,
+    }, topbar)
+
+    local logoDot = create("Frame", {
+        Size = UDim2.fromOffset(10, 10),
+        Position = UDim2.new(0, 16, 0.5, -5),
+        BackgroundColor3 = Theme.Accent,
+        BorderSizePixel = 0,
+    }, topbar)
+    addCorner(logoDot, 5)
+
+    create("TextLabel", {
+        Size = UDim2.new(0, 160, 1, 0),
+        Position = UDim2.new(0, 34, 0, 0),
+        BackgroundTransparency = 1,
+        Text = options.name or "Roblox Hub",
+        TextColor3 = Theme.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 15,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, topbar)
+
+    local activeBadge = create("TextLabel", {
+        Size = UDim2.fromOffset(116, 24),
+        Position = UDim2.new(1, -206, 0.5, -12),
+        BackgroundColor3 = Theme.Card,
+        Text = "Đang bật: 0",
+        TextColor3 = Theme.AccentGlow,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 12,
+    }, topbar)
+    addCorner(activeBadge, 12)
+    addStroke(activeBadge, Theme.Border, 1)
+
+    local function setVisible(visible)
+        mainFrame.Visible = visible
+        miniPill.Visible = not visible
+    end
+
+    local minBtn = create("TextButton", {
+        Size = UDim2.fromOffset(30, 26),
+        Position = UDim2.new(1, -78, 0.5, -13),
+        BackgroundColor3 = Theme.Card,
+        Text = "—",
+        TextColor3 = Theme.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 13,
+        AutoButtonColor = false,
+    }, topbar)
+    addCorner(minBtn, 6)
+    minBtn.MouseButton1Click:Connect(function() setVisible(false) end)
+
+    local closeBtn = create("TextButton", {
+        Size = UDim2.fromOffset(30, 26),
+        Position = UDim2.new(1, -42, 0.5, -13),
+        BackgroundColor3 = Theme.Card,
+        Text = "×",
+        TextColor3 = Theme.Danger,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        AutoButtonColor = false,
+    }, topbar)
+    addCorner(closeBtn, 6)
+    closeBtn.MouseButton1Click:Connect(function() setVisible(false) end)
+
+    miniPill.MouseButton1Click:Connect(function() setVisible(true) end)
+
+    environment.RobloxHubHotkeyConnection = UserInputService.InputBegan:Connect(function(input, gp)
+        if not gp and input.KeyCode == Enum.KeyCode.RightShift then
+            setVisible(not mainFrame.Visible)
+        end
+    end)
+
+    -- Khu vực thân (Sidebar + Nội dung)
+    local body = create("Frame", {
+        Size = UDim2.new(1, 0, 1, -48),
+        Position = UDim2.new(0, 0, 0, 48),
+        BackgroundTransparency = 1,
+    }, mainFrame)
+
+    local sidebar = create("ScrollingFrame", {
+        Name = "Sidebar",
+        Size = UDim2.new(0, 158, 1, 0),
+        BackgroundColor3 = Theme.Sidebar,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = Theme.Border,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    }, body)
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
+    }, sidebar)
+    create("UIListLayout", {
+        Padding = UDim.new(0, 5),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, sidebar)
+
+    create("Frame", {
+        Size = UDim2.new(0, 1, 1, 0),
+        Position = UDim2.new(0, 158, 0, 0),
+        BackgroundColor3 = Theme.Border,
+        BorderSizePixel = 0,
+    }, body)
+
+    local contentHolder = create("Frame", {
+        Name = "ContentHolder",
+        Size = UDim2.new(1, -159, 1, 0),
+        Position = UDim2.new(0, 159, 0, 0),
+        BackgroundTransparency = 1,
+    }, body)
+
+    -- Bộ quản lý Registry & Config
+    local ui = {
+        ready = false,
+        controls = {},
+        order = {},
+        buttons = {},
+        toggles = {},
+    }
+
+    local configPath = (options.fileName or "RobloxHubUI") .. "_Modern.json"
+    local autoSaveEnabled = options.autoSave == true
+    local savePending = false
+
+    local function scheduleSave()
+        if not autoSaveEnabled or not ui.ready or savePending or type(writefile) ~= "function" then return end
+        savePending = true
+        task.delay(0.35, function()
+            savePending = false
+            pcall(function()
+                writefile(configPath, HttpService:JSONEncode(ui:Snapshot()))
+            end)
+        end)
+    end
+
+    local function updateActiveBadge()
+        local count = 0
+        for _, entry in pairs(ui.toggles) do
+            if entry.control.value == true then count += 1 end
+        end
+        activeBadge.Text = "Đang bật: " .. tostring(count)
+    end
+
+    function ui:RegisterControl(flag, kind, control, runner)
+        if type(flag) ~= "string" or flag == "" then return end
+        if not self.controls[flag] then
+            table.insert(self.order, flag)
+        end
+        local entry = { flag = flag, kind = kind, control = control, runner = runner }
+        self.controls[flag] = entry
+        if kind == "toggle" then self.toggles[flag] = entry end
+        if kind == "button" then self.buttons[flag] = entry end
+    end
+
+    function ui:Snapshot()
+        local snap = {}
+        for _, flag in ipairs(self.order) do
+            local entry = self.controls[flag]
+            if entry and entry.kind ~= "button" and entry.kind ~= "text" then
+                local val = entry.control.value
+                if entry.kind == "dropdown" then
+                    if entry.control._multi then
+                        local copy = {}
+                        for i, v in ipairs(val) do copy[i] = v end
+                        snap[flag] = copy
+                    else
+                        snap[flag] = val[1] or ""
+                    end
+                else
+                    snap[flag] = val
+                end
+            end
+        end
+        return snap
+    end
+
+    function ui:Apply(saved, mode)
+        if type(saved) ~= "table" then return end
+        for _, flag in ipairs(self.order) do
+            local entry = self.controls[flag]
+            local value = saved[flag]
+            if entry and value ~= nil then
+                local isToggle = entry.kind == "toggle"
+                if (mode == "values" and not isToggle and entry.kind ~= "button")
+                    or (mode == "toggles" and isToggle)
+                    or mode == nil then
+                    if entry.control.Set then
+                        entry.control:Set(value, false)
+                    end
+                end
+            end
+        end
+    end
+
+    function ui:Run(actions)
+        if type(actions) ~= "table" then return end
+        if #actions > 0 then
+            for _, flag in ipairs(actions) do
+                local entry = self.buttons[flag]
+                if entry and entry.runner then pcall(entry.runner) end
+            end
+        else
+            for flag, shouldRun in pairs(actions) do
+                if shouldRun then
+                    local entry = self.buttons[flag]
+                    if entry and entry.runner then pcall(entry.runner) end
+                end
+            end
+        end
+    end
+
+    function ui:LoadLocalConfig()
+        if not options.autoLoad or type(readfile) ~= "function" then return end
+        if type(isfile) == "function" and not isfile(configPath) then return end
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath)) end)
+        if ok and type(data) == "table" then
+            self:Apply(data, "values")
+            self:Apply(data, "toggles")
+        end
+    end
+
+    function ui:DisableAllToggles()
+        for _, entry in pairs(self.toggles) do
+            if entry.control.value == true then
+                entry.control:Set(false)
+            end
+        end
+    end
+
+    function ui:GetActiveFlags()
+        local active = {}
+        for _, flag in ipairs(self.order) do
+            local entry = self.toggles[flag]
+            if entry and entry.control.value == true then
+                table.insert(active, flag)
+            end
+        end
+        return active
+    end
+
+    -- Quản lý Tab
+    local tabs = {}
+    local activeTab = nil
+
+    local function selectTab(tabObj)
+        for _, item in ipairs(tabs) do
+            local isTarget = (item == tabObj)
+            item.page.Visible = isTarget
+            tween(item.button, {
+                BackgroundColor3 = isTarget and Theme.Card or Theme.Sidebar,
+                BackgroundTransparency = isTarget and 0 or 1,
+            })
+            tween(item.label, { TextColor3 = isTarget and Theme.Text or Theme.Muted })
+            tween(item.indicator, { BackgroundTransparency = isTarget and 0 or 1 })
+        end
+        activeTab = tabObj
+    end
+
+    function ui:CreateTab(name, iconText)
+        local btn = create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = Theme.Sidebar,
+            BackgroundTransparency = 1,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = #tabs + 1,
+        }, sidebar)
+        addCorner(btn, 8)
+
+        local indicator = create("Frame", {
+            Size = UDim2.new(0, 3, 0, 18),
+            Position = UDim2.new(0, 4, 0.5, -9),
+            BackgroundColor3 = Theme.Accent,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, btn)
+        addCorner(indicator, 2)
+
+        local label = create("TextLabel", {
+            Size = UDim2.new(1, -20, 1, 0),
+            Position = UDim2.new(0, 14, 0, 0),
+            BackgroundTransparency = 1,
+            Text = (iconText and (iconText .. "  ") or "") .. name,
+            TextColor3 = Theme.Muted,
+            Font = Enum.Font.GothamSemibold,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, btn)
+
+        local page = create("ScrollingFrame", {
+            Name = "Page_" .. name,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 4,
+            ScrollBarImageColor3 = Theme.Border,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false,
+        }, contentHolder)
+        create("UIPadding", {
+            PaddingTop = UDim.new(0, 12),
+            PaddingBottom = UDim.new(0, 16),
+            PaddingLeft = UDim.new(0, 14),
+            PaddingRight = UDim.new(0, 16),
+        }, page)
+        create("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, page)
+
+        local tabObj = {
+            name = name,
+            button = btn,
+            label = label,
+            indicator = indicator,
+            page = page,
+            _order = 0,
+        }
+
+        local function nextOrder()
+            tabObj._order += 1
+            return tabObj._order
+        end
+
+        btn.MouseButton1Click:Connect(function() selectTab(tabObj) end)
+        table.insert(tabs, tabObj)
+        if not activeTab then selectTab(tabObj) end
+
+        -- Section Header
+        function tabObj:CreateSection(cfg)
+            local holder = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 24),
+                BackgroundTransparency = 1,
+                LayoutOrder = nextOrder(),
+            }, page)
+            create("TextLabel", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = string.upper(tostring(cfg.name or "")),
+                TextColor3 = Theme.AccentGlow,
+                Font = Enum.Font.GothamBold,
+                TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Left,
+            }, holder)
+            create("Frame", {
+                Size = UDim2.new(1, 0, 0, 1),
+                Position = UDim2.new(0, 0, 1, -1),
+                BackgroundColor3 = Theme.Border,
+                BackgroundTransparency = 0.4,
+                BorderSizePixel = 0,
+            }, holder)
+            return holder
+        end
+
+        -- Group proxy (tương thích trading:CreateGroup)
+        function tabObj:CreateGroup()
+            return self
+        end
+
+        -- Text / Status Card
+        function tabObj:CreateText(cfg)
+            local card = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = Theme.Card,
+                BorderSizePixel = 0,
+                LayoutOrder = nextOrder(),
+            }, page)
+            addCorner(card, 8)
+            addStroke(card, Theme.Border, 1, 0.35)
+            create("UIPadding", {
+                PaddingTop = UDim.new(0, 9),
+                PaddingBottom = UDim.new(0, 9),
+                PaddingLeft = UDim.new(0, 12),
+                PaddingRight = UDim.new(0, 12),
+            }, card)
+
+            local lbl = create("TextLabel", {
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.text or ""),
+                TextColor3 = Theme.Muted,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
+            }, card)
+
+            local control = { value = tostring(cfg.text or "") }
+            function control:Set(newText)
+                self.value = tostring(newText or "")
+                lbl.Text = self.value
+            end
+            return control
+        end
+
+        -- Toggle Switch
+        function tabObj:CreateToggle(cfg)
+            local state = cfg.value == true
+            local card = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 40),
+                BackgroundColor3 = Theme.Card,
+                Text = "",
+                AutoButtonColor = false,
+                LayoutOrder = nextOrder(),
+            }, page)
+            addCorner(card, 8)
+            local stroke = addStroke(card, Theme.Border, 1, 0.25)
+
+            create("TextLabel", {
+                Size = UDim2.new(1, -74, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.name or "Toggle"),
+                TextColor3 = Theme.Text,
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+            }, card)
+
+            local track = create("Frame", {
+                Size = UDim2.fromOffset(42, 22),
+                Position = UDim2.new(1, -54, 0.5, -11),
+                BackgroundColor3 = state and Theme.Accent or Theme.Input,
+                BorderSizePixel = 0,
+            }, card)
+            addCorner(track, 11)
+            addStroke(track, Theme.Border, 1)
+
+            local knob = create("Frame", {
+                Size = UDim2.fromOffset(16, 16),
+                Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
+                BackgroundColor3 = Theme.Text,
+                BorderSizePixel = 0,
+            }, track)
+            addCorner(knob, 8)
+
+            local control = { value = state }
+            local function render(val)
+                tween(track, { BackgroundColor3 = val and Theme.Accent or Theme.Input })
+                tween(knob, { Position = val and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8) })
+                tween(stroke, { Color = val and Theme.Accent or Theme.Border })
+            end
+
+            function control:Set(val, silent)
+                local nextVal = val == true
+                self.value = nextVal
+                render(nextVal)
+                updateActiveBadge()
+                if not silent and type(cfg.callback) == "function" then
+                    task.spawn(cfg.callback, nextVal)
+                end
+                scheduleSave()
+            end
+
+            card.MouseEnter:Connect(function() tween(card, { BackgroundColor3 = Theme.CardHover }, 0.1) end)
+            card.MouseLeave:Connect(function() tween(card, { BackgroundColor3 = Theme.Card }, 0.1) end)
+            card.MouseButton1Click:Connect(function() control:Set(not control.value, false) end)
+
+            ui:RegisterControl(cfg.flag, "toggle", control)
+            updateActiveBadge()
+            return control
+        end
+
+        -- Button
+        function tabObj:CreateButton(cfg)
+            local btn = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 38),
+                BackgroundColor3 = Theme.Card,
+                Text = "",
+                AutoButtonColor = false,
+                LayoutOrder = nextOrder(),
+            }, page)
+            addCorner(btn, 8)
+            addStroke(btn, Theme.Accent, 1, 0.45)
+
+            create("TextLabel", {
+                Size = UDim2.new(1, -48, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.name or "Button"),
+                TextColor3 = Theme.Text,
+                Font = Enum.Font.GothamSemibold,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+            }, btn)
+
+            create("TextLabel", {
+                Size = UDim2.fromOffset(26, 26),
+                Position = UDim2.new(1, -34, 0.5, -13),
+                BackgroundTransparency = 1,
+                Text = "›",
+                TextColor3 = Theme.AccentGlow,
+                Font = Enum.Font.GothamBold,
+                TextSize = 18,
+            }, btn)
+
+            local function run()
+                if type(cfg.callback) == "function" then
+                    task.spawn(cfg.callback)
+                end
+            end
+
+            btn.MouseEnter:Connect(function() tween(btn, { BackgroundColor3 = Theme.CardHover }, 0.1) end)
+            btn.MouseLeave:Connect(function() tween(btn, { BackgroundColor3 = Theme.Card }, 0.1) end)
+            btn.MouseButton1Click:Connect(run)
+
+            local control = { Run = run }
+            ui:RegisterControl(cfg.flag, "button", control, run)
+            return control
+        end
+
+        -- Text Input
+        function tabObj:CreateInput(cfg)
+            local initial = tostring(cfg.value or "")
+            local card = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 42),
+                BackgroundColor3 = Theme.Card,
+                BorderSizePixel = 0,
+                LayoutOrder = nextOrder(),
+            }, page)
+            addCorner(card, 8)
+            addStroke(card, Theme.Border, 1, 0.25)
+
+            create("TextLabel", {
+                Size = UDim2.new(0.45, -12, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.name or "Input"),
+                TextColor3 = Theme.Text,
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+            }, card)
+
+            local box = create("TextBox", {
+                Size = UDim2.new(0.55, -16, 0, 28),
+                Position = UDim2.new(0.45, 4, 0.5, -14),
+                BackgroundColor3 = Theme.Input,
+                Text = initial,
+                PlaceholderText = tostring(cfg.placeholder or "Nhập giá trị..."),
+                TextColor3 = Theme.Text,
+                PlaceholderColor3 = Theme.Muted,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
+                ClearTextOnFocus = false,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                ClipsDescendants = true,
+            }, card)
+            addCorner(box, 6)
+            local boxStroke = addStroke(box, Theme.Border, 1)
+            create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, box)
+
+            local control = { value = initial }
+            function control:Set(val, silent)
+                local str = tostring(val or "")
+                if cfg.numeric and str ~= "" then
+                    local cleaned = str:gsub("[^%d%.%-]", "")
+                    str = cleaned
+                end
+                self.value = str
+                if box.Text ~= str then box.Text = str end
+                if not silent and type(cfg.callback) == "function" then
+                    task.spawn(cfg.callback, str)
+                end
+                scheduleSave()
+            end
+
+            box.Focused:Connect(function() tween(boxStroke, { Color = Theme.Accent }, 0.12) end)
+            box.FocusLost:Connect(function()
+                tween(boxStroke, { Color = Theme.Border }, 0.12)
+                control:Set(box.Text, false)
+            end)
+
+            ui:RegisterControl(cfg.flag, "input", control)
+            return control
+        end
+
+        -- Dropdown (Hỗ trợ đơn & đa chọn, có thanh tìm kiếm nhanh, chuẩn .value[1] & :Refresh)
+        function tabObj:CreateDropdown(cfg)
+            local isMulti = cfg.multiSelect == true
+            local currentOptions = type(cfg.options) == "table" and cfg.options or {}
+            local expanded = false
+
+            local container = create("Frame", {
+                Size = UDim2.new(1, 0, 0, 42),
+                BackgroundColor3 = Theme.Card,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                LayoutOrder = nextOrder(),
+            }, page)
+            addCorner(container, 8)
+            local stroke = addStroke(container, Theme.Border, 1, 0.25)
+
+            local header = create("TextButton", {
+                Size = UDim2.new(1, 0, 0, 42),
+                BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
+            }, container)
+
+            create("TextLabel", {
+                Size = UDim2.new(0.45, -12, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.name or "Dropdown"),
+                TextColor3 = Theme.Text,
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+            }, header)
+
+            local valueLabel = create("TextLabel", {
+                Size = UDim2.new(0.55, -34, 1, 0),
+                Position = UDim2.new(0.45, 0, 0, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(cfg.placeholder or "Chọn..."),
+                TextColor3 = Theme.Muted,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Right,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+            }, header)
+
+            local arrow = create("TextLabel", {
+                Size = UDim2.fromOffset(20, 42),
+                Position = UDim2.new(1, -26, 0, 0),
+                BackgroundTransparency = 1,
+                Text = "▾",
+                TextColor3 = Theme.Muted,
+                Font = Enum.Font.GothamBold,
+                TextSize = 13,
+            }, header)
+
+            local listPanel = create("Frame", {
+                Size = UDim2.new(1, -16, 0, 166),
+                Position = UDim2.new(0, 8, 0, 44),
+                BackgroundColor3 = Theme.Input,
+                BorderSizePixel = 0,
+            }, container)
+            addCorner(listPanel, 6)
+            addStroke(listPanel, Theme.Border, 1)
+
+            local searchBox = create("TextBox", {
+                Size = UDim2.new(1, -12, 0, 26),
+                Position = UDim2.new(0, 6, 0, 6),
+                BackgroundColor3 = Theme.Card,
+                Text = "",
+                PlaceholderText = "Tìm nhanh...",
+                TextColor3 = Theme.Text,
+                PlaceholderColor3 = Theme.Muted,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
+                ClearTextOnFocus = false,
+                TextXAlignment = Enum.TextXAlignment.Left,
+            }, listPanel)
+            addCorner(searchBox, 5)
+            create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, searchBox)
+
+            local optScroll = create("ScrollingFrame", {
+                Size = UDim2.new(1, -8, 1, -40),
+                Position = UDim2.new(0, 4, 0, 36),
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                ScrollBarThickness = 3,
+                ScrollBarImageColor3 = Theme.Border,
+                CanvasSize = UDim2.new(0, 0, 0, 0),
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            }, listPanel)
+            create("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder }, optScroll)
+
+            local control = { value = {}, _multi = isMulti }
+
+            local function isSelected(item)
+                return table.find(control.value, item) ~= nil
+            end
+
+            local function updateDisplay()
+                if #control.value == 0 then
+                    valueLabel.Text = tostring(cfg.placeholder or "Chưa chọn")
+                    valueLabel.TextColor3 = Theme.Muted
+                elseif #control.value <= 2 then
+                    valueLabel.Text = table.concat(control.value, ", ")
+                    valueLabel.TextColor3 = Theme.Text
+                else
+                    valueLabel.Text = string.format("%d mục đã chọn", #control.value)
+                    valueLabel.TextColor3 = Theme.AccentGlow
+                end
+            end
+
+            local function rebuildItems()
+                for _, child in ipairs(optScroll:GetChildren()) do
+                    if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+                end
+                local query = string.lower(searchBox.Text or "")
+                local shown = 0
+                for _, opt in ipairs(currentOptions) do
+                    local optStr = tostring(opt)
+                    if query == "" or string.find(string.lower(optStr), query, 1, true) then
+                        shown += 1
+                        local selected = isSelected(optStr)
+                        local itemBtn = create("TextButton", {
+                            Size = UDim2.new(1, -4, 0, 26),
+                            BackgroundColor3 = selected and Theme.Accent or Theme.Card,
+                            BackgroundTransparency = selected and 0.15 or 0.5,
+                            Text = "",
+                            AutoButtonColor = false,
+                            LayoutOrder = shown,
+                        }, optScroll)
+                        addCorner(itemBtn, 5)
+                        create("TextLabel", {
+                            Size = UDim2.new(1, -16, 1, 0),
+                            Position = UDim2.new(0, 8, 0, 0),
+                            BackgroundTransparency = 1,
+                            Text = (selected and "✓ " or "") .. optStr,
+                            TextColor3 = selected and Theme.Text or Theme.Muted,
+                            Font = selected and Enum.Font.GothamSemibold or Enum.Font.Gotham,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd,
+                        }, itemBtn)
+
+                        itemBtn.MouseButton1Click:Connect(function()
+                            if isMulti then
+                                local idx = table.find(control.value, optStr)
+                                if idx then
+                                    table.remove(control.value, idx)
+                                else
+                                    table.insert(control.value, optStr)
+                                end
+                                control:Set(control.value, false)
+                            else
+                                control:Set(optStr, false)
+                                expanded = false
+                                arrow.Text = "▾"
+                                tween(container, { Size = UDim2.new(1, 0, 0, 42) }, 0.14)
+                                tween(stroke, { Color = Theme.Border }, 0.14)
+                            end
+                        end)
+                    end
+                end
+                if shown == 0 then
+                    create("TextLabel", {
+                        Size = UDim2.new(1, 0, 0, 26),
+                        BackgroundTransparency = 1,
+                        Text = "(Không có mục phù hợp)",
+                        TextColor3 = Theme.Muted,
+                        Font = Enum.Font.Gotham,
+                        TextSize = 12,
+                    }, optScroll)
+                end
+            end
+
+            function control:Set(val, silent)
+                local nextList = {}
+                if isMulti then
+                    if type(val) == "table" then
+                        for _, item in ipairs(val) do
+                            local s = tostring(item)
+                            if s ~= "" and not table.find(nextList, s) then
+                                table.insert(nextList, s)
+                            end
+                        end
+                    elseif type(val) == "string" and val ~= "" then
+                        table.insert(nextList, val)
+                    end
+                else
+                    local chosen = val
+                    if type(val) == "table" then chosen = val[1] end
+                    if type(chosen) == "string" and chosen ~= "" then
+                        nextList = { chosen }
+                    end
+                end
+                self.value = nextList
+                updateDisplay()
+                rebuildItems()
+                if not silent and type(cfg.callback) == "function" then
+                    if isMulti then
+                        local copy = {}
+                        for i, v in ipairs(nextList) do copy[i] = v end
+                        task.spawn(cfg.callback, copy)
+                    else
+                        task.spawn(cfg.callback, nextList[1] or "")
+                    end
+                end
+                scheduleSave()
+            end
+
+            function control:Refresh(newOptions)
+                currentOptions = type(newOptions) == "table" and newOptions or {}
+                rebuildItems()
+            end
+
+            header.MouseButton1Click:Connect(function()
+                expanded = not expanded
+                arrow.Text = expanded and "▴" or "▾"
+                local panelHeight = math.clamp(#currentOptions * 29 + 52, 108, 178)
+                listPanel.Size = UDim2.new(1, -16, 0, panelHeight)
+                tween(container, { Size = UDim2.new(1, 0, 0, expanded and (panelHeight + 52) or 42) }, 0.15)
+                tween(stroke, { Color = expanded and Theme.Accent or Theme.Border }, 0.15)
+            end)
+
+            searchBox:GetPropertyChangedSignal("Text"):Connect(rebuildItems)
+
+            control:Set(cfg.value, true)
+            ui:RegisterControl(cfg.flag, "dropdown", control)
+            return control
+        end
+
+        return tabObj
+    end
+
+    return ui
 end
-window:CreateTab({ name = "Stats" })
-local farm = createTab("farm")
-local optimize = createTab("optimize")
-local event = createTab("Event")
-local mail = createTab("mail")
-local trading = createTab("trading")
-local rank = createTab("rank")
-local automatic = createTab("automatic")
-local webhook = createTab("webhook")
-local setting = createTab("setting")
+
+local ui = buildModernHubUI({
+    name = "Menu Roblox",
+    autoSave = launchConfig == nil,
+    autoLoad = launchConfig == nil,
+    fileName = "RobloxHubUI",
+})
+environment.RobloxHubUI = ui
+
+-- Khai báo các tab theo thứ tự sidebar
+local statsTab = ui:CreateTab("Stats", "📊")
+local farm = ui:CreateTab("Farm", "⚡")
+local event = ui:CreateTab("Event", "🎃")
+local automatic = ui:CreateTab("Automatic", "🤖")
+local mail = ui:CreateTab("Mail", "✉️")
+local trading = ui:CreateTab("Trading", "🛒")
+local rank = ui:CreateTab("Rank", "🏆")
+local webhook = ui:CreateTab("Webhook", "🔔")
+local optimize = ui:CreateTab("Optimize", "⚙️")
+local setting = ui:CreateTab("Setting", "🔧")
+
 local runtimeToggles = {}
 
+-- ============================================================================
 -- 4. Hàm tạo toggle dùng chung
--- Launcher bật toggle qua RobloxHubConfig.toggles[flag] = true.
--- Nối toggle Rayfield với tính năng cùng flag.
+-- ============================================================================
 local function createToggle(tab, name, flag)
     local initial = launchToggles[flag] == true
     if launchConfig and type(launchConfig.controls) == "table" and launchConfig.controls[flag] ~= nil then
         initial = launchConfig.controls[flag] == true
     end
     local applied = false
-    -- Áp dụng trạng thái bật tắt từ giao diện hoặc launcher.
     local function apply(enabled)
         runtimeToggles[flag] = enabled
         local feature = features[flag]
@@ -240,9 +1211,9 @@ local function createToggle(tab, name, flag)
     return control
 end
 
+-- ============================================================================
 -- 5. Hàm xử lý và dữ liệu dùng cho giao diện
--- Phần này không khai báo control. Các lệnh Create... nằm ở mục 6 cuối file.
-
+-- ============================================================================
 local function selectedOptions(options, preset)
     local selected = {}
     if type(preset) == "table" then
@@ -267,12 +1238,11 @@ local function resumeConfig()
     config.toggles = type(config.toggles) == "table" and config.toggles or {}
     for flag, value in pairs(runtimeToggles) do config.toggles[flag] = value end
     config.controls = ui:Snapshot()
-    config.actions = nil -- Nút chỉ chạy khi được yêu cầu, không bấm lại sau hop.
+    config.actions = nil
     config.settings = { time = timedHop.getMinutes(), visited = timedHop.getVisited() }
     return config
 end
 
--- Các callback giữ chung trạng thái với control được gắn ở phần TAB: mail.
 local function mailHandlers(gift)
     local state = {}
     function state.selectClass(class)
@@ -312,7 +1282,6 @@ local function mailHandlers(gift)
     return state
 end
 
--- Đọc kho ở luồng riêng để giữ quyền tạo UI của Rayfield.
 local function runInventoryAction(action, ...)
     local result
     task.spawn(function(...)
@@ -341,7 +1310,7 @@ local function enchantHandlers(feature)
     function state.select(value) state.selected = value end
     function state.updateText()
         local list = feature.getList()
-        state.text:Set("enchant : " .. (#list > 0 and table.concat(list, ", ") or "(trống)"))
+        state.text:Set("Enchant: " .. (#list > 0 and table.concat(list, ", ") or "(trống)"))
     end
     function state.restore()
         local list = loadList()
@@ -377,20 +1346,73 @@ local function setGiftSelection(values)
 end
 
 -- ============================================================================
--- 6. KHU VỰC TẠO CONTROL — THÊM NÚT MỚI TẠI TAB TƯƠNG ỨNG BÊN DƯỚI
+-- 6. KHU VỰC TẠO CONTROL CHO TỪNG TAB
 -- ============================================================================
--- Toggle: createToggle(tab, "Tên hiển thị", "FlagTinhNang")
---         Module phải có features.FlagTinhNang.duy(on, shared).
--- Input / dropdown / button: tab:CreateInput / CreateDropdown / CreateButton.
--- Luôn đặt flag riêng; tab đã wrap sẽ tự đăng ký vào RobloxHubUI.
--- Giữ Class trước Item. Hàm xử lý dài đặt ở mục 5, callback gọi hàm đó.
--- Thêm control trước mục 7 để controls/actions từ launcher tìm được nó.
 
-
--- ============================================================================
--- TAB: setting
--- ============================================================================
+-- TAB: Stats (Dashboard trực tiếp)
 do
+    statsTab:CreateSection({ name = "Tổng quan phiên chạy" })
+    local overviewText = statsTab:CreateText({ text = "Đang thu thập thông số..." })
+
+    statsTab:CreateSection({ name = "Tính năng đang bật" })
+    local activeListText = statsTab:CreateText({ text = "(Chưa có tính năng nào được bật)" })
+
+    statsTab:CreateSection({ name = "Thao tác nhanh" })
+    statsTab:CreateButton({
+        name = "Tắt nhanh toàn bộ tính năng đang bật",
+        flag = "StatsStopAll",
+        callback = function() ui:DisableAllToggles() end,
+    })
+    statsTab:CreateButton({
+        name = "Sao chép JobId Server hiện tại",
+        flag = "StatsCopyJobId",
+        callback = function()
+            if type(setclipboard) == "function" then
+                setclipboard(tostring(game.JobId))
+            end
+        end,
+    })
+
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local StatsService = game:GetService("Stats")
+    local frameCount, fps, lastUpdate = 0, 0, os.clock()
+
+    environment.RobloxHubStatsConnection = RunService.RenderStepped:Connect(function()
+        frameCount += 1
+        local now = os.clock()
+        if now - lastUpdate < 1 then return end
+        fps = math.floor(frameCount / (now - lastUpdate) + 0.5)
+        frameCount = 0
+        lastUpdate = now
+
+        local elapsed = math.floor(now - scriptStartedAt)
+        local h = math.floor(elapsed / 3600)
+        local m = math.floor((elapsed % 3600) / 60)
+        local s = elapsed % 60
+
+        local ping = 0
+        pcall(function()
+            ping = math.floor(StatsService.Network.ServerStatsItem["Data Ping"]:GetValue())
+        end)
+
+        local afkInfo = (launchConfig and launchConfig.antiAfk == false) and "Đã tắt"
+            or (lastAntiAfkAt and ("Hoạt động (lần cuối " .. math.floor(now - lastAntiAfkAt) .. "s trước)") or "Đang chờ chu kỳ đầu")
+
+        overviewText:Set(string.format(
+            "Người chơi: %s\nThời gian chạy: %02d:%02d:%02d  |  FPS: %d  |  Ping: %dms\nServer: %d/%d người  |  Anti-AFK: %s\nPhím ẩn/hiện nhanh: RightShift",
+            Players.LocalPlayer.Name, h, m, s, fps, ping,
+            #Players:GetPlayers(), Players.MaxPlayers, afkInfo
+        ))
+
+        local active = ui:GetActiveFlags()
+        activeListText:Set(#active > 0 and table.concat(active, ", ") or "(Chưa có tính năng nào được bật)")
+    end)
+end
+
+-- TAB: setting
+do
+    setting:CreateSection({ name = "Tự động đổi Server (Timed Hop)" })
     local timedHop = features.SettingsTimedHop
     if timedHop then
         local preset = launchConfig and launchConfig.settings
@@ -400,6 +1422,7 @@ do
         setting:CreateInput({
             name = "Time (phút)",
             flag = "SettingsHopTime",
+            numeric = true,
             value = tostring(timedHop.getMinutes()),
             callback = setHopMinutes,
         })
@@ -415,18 +1438,59 @@ do
     end
 end
 
--- ============================================================================
 -- TAB: Event
--- ============================================================================
 do
-    createToggle(event, "auto open map event", "EventAutoOpenMap")
+    event:CreateSection({ name = "Farm & Tự động sự kiện" })
+    createToggle(event, "Auto Open Map Event", "EventAutoOpenMap")
     createToggle(event, "Auto Rebirth Event (100%)", "EventAutoRebirth")
     createToggle(event, "Auto Hunt Pet", "EventAutoHuntPet")
     createToggle(event, "Auto Turkey", "EventAutoTurkey")
-    createToggle(event, "auto pumpkin", "EventAutoPumpkin")
-    createToggle(event, "Auto Buy Pumpkin + Pet Net", "EventAutoBuyPumpkin")
     createToggle(event, "Auto Hot Coca", "EventAutoHotCoca")
-    createToggle(event, "auto fannel gift", "EventAutoFlannelGift")
+    createToggle(event, "Auto Flannel Gift", "EventAutoFlannelGift")
+    createToggle(event, "Fast Farm Event", "EventFastFarm")
+
+    event:CreateSection({ name = "Pumpkin Tycoon" })
+    createToggle(event, "Auto Pumpkin", "EventAutoPumpkin")
+    createToggle(event, "Auto Buy Pumpkin + Pet Net", "EventAutoBuyPumpkin")
+
+    local upgrade = features.EventAutoPumpkinUpgrade
+    if upgrade then
+        local options = upgrade.getOptions()
+        local initial = selectedOptions(options, launchConfig and launchConfig.pumpkinUpgrades)
+        event:CreateDropdown({
+            name = "Pumpkin Upgrades",
+            flag = "EventPumpkinUpgradeSelection",
+            options = options,
+            multiSelect = true,
+            value = initial,
+            callback = upgrade.setSelection,
+        })
+        if launchConfig then upgrade.setSelection(initial) end
+        createToggle(event, "Auto Pumpkin Upgrade", "EventAutoPumpkinUpgrade")
+    end
+
+    local boost = features.EventAutoEquipBoost
+    if boost then
+        local options, initial = boost.getOptions(), {}
+        local preset = launchConfig and launchConfig.boosts
+        if boost.resolveSelection then
+            initial = boost.resolveSelection(preset)
+        else
+            initial = selectedOptions(options, preset)
+        end
+        event:CreateDropdown({
+            name = "Boosts",
+            flag = "EventBoostSelection",
+            options = options,
+            multiSelect = true,
+            value = initial,
+            callback = boost.setSelection,
+        })
+        if launchConfig then boost.setSelection(initial) end
+        createToggle(event, "Auto Equip Boost", "EventAutoEquipBoost")
+    end
+
+    event:CreateSection({ name = "Auto Gift Huge & Hiển thị" })
     local hugeGift = features.EventAutoGiftHuge
     if hugeGift then
         local inputFlag = "EventHugeGiftRecipient"
@@ -448,7 +1512,6 @@ do
             placeholder = "Roblox username",
             callback = hugeGift.setRecipient,
         })
-        -- Đồng bộ ô tên và module trước khi launcher bật Auto Gift Huge.
         if launchConfig then
             table.insert(startupActions, function()
                 input:Set(recipient, true)
@@ -458,85 +1521,40 @@ do
         local control = createToggle(event, "Auto Gift Huge", "EventAutoGiftHuge")
         hugeGift.setStopCallback(function() control:Set(false) end)
     end
-    createToggle(event, "optimize event", "EventOptimize")
-    createToggle(event, "fast farm event", "EventFastFarm")
+
+    createToggle(event, "Optimize Event", "EventOptimize")
     local stats = features.EventStatsGui
     if stats then
-        local control = createToggle(event, "stats event", "EventStatsGui")
+        local control = createToggle(event, "Stats Event GUI", "EventStatsGui")
         stats.setQuickClose(function() control:Set(false) end)
     end
-
-    -- Chọn các mục nâng cấp Pumpkin Tycoon.
-    local upgrade = features.EventAutoPumpkinUpgrade
-    if upgrade then
-        local options = upgrade.getOptions()
-        local initial = selectedOptions(options, launchConfig and launchConfig.pumpkinUpgrades)
-        event:CreateDropdown({
-            name = "Pumpkin Upgrades",
-            flag = "EventPumpkinUpgradeSelection",
-            options = options,
-            multiSelect = true,
-            value = initial,
-            callback = upgrade.setSelection,
-        })
-        if launchConfig then upgrade.setSelection(initial) end
-        createToggle(event, "auto pumpkin upgrade", "EventAutoPumpkinUpgrade")
-    end
-
-    -- Chọn boost dùng tự động trong Pumpkin Tycoon.
-    local boost = features.EventAutoEquipBoost
-    if boost then
-        local options, initial = boost.getOptions(), {}
-        local preset = launchConfig and launchConfig.boosts
-        if boost.resolveSelection then
-            initial = boost.resolveSelection(preset)
-        else
-            initial = selectedOptions(options, preset)
-        end
-        event:CreateDropdown({
-            name = "Boosts",
-            flag = "EventBoostSelection",
-            options = options,
-            multiSelect = true,
-            value = initial,
-            callback = boost.setSelection,
-        })
-        if launchConfig then boost.setSelection(initial) end
-        createToggle(event, "auto equip boost", "EventAutoEquipBoost")
-    end
 end
 
--- ============================================================================
 -- TAB: farm
--- ============================================================================
 do
-    -- Farm và di chuyển
-    farm:CreateSection({ name = "farm" })
-    createToggle(farm, "inf pet speed", "FarmInfinityPetSpeed")
-    createToggle(farm, "fast farm", "FarmFastFarm")
-    createToggle(farm, "auto tap", "FarmAutoTap")
-    createToggle(farm, "Tự nhặt orb", "FarmAutoCollectOrb")
-    createToggle(farm, "tele to best area", "FarmTeleToBestArea")
+    farm:CreateSection({ name = "Farm & Di chuyển" })
+    createToggle(farm, "Inf Pet Speed", "FarmInfinityPetSpeed")
+    createToggle(farm, "Fast Farm", "FarmFastFarm")
+    createToggle(farm, "Auto Tap", "FarmAutoTap")
+    createToggle(farm, "Tự nhặt Orb", "FarmAutoCollectOrb")
+    createToggle(farm, "Tele To Best Area", "FarmTeleToBestArea")
 
-    farm:CreateSection({ name = "map" })
-    createToggle(farm, "tele to best world", "FarmTeleToBestWorld")
-    createToggle(farm, "auto buy next area", "FarmAutoBuyNextArea")
+    farm:CreateSection({ name = "Bản đồ" })
+    createToggle(farm, "Tele To Best World", "FarmTeleToBestWorld")
+    createToggle(farm, "Auto Buy Next Area", "FarmAutoBuyNextArea")
 
-    farm:CreateSection({ name = "Nâng cấp slot" })
-    createToggle(farm, "auto upd pet slot", "FarmAutoPetSlot")
-    createToggle(farm, "auto upd egg slot", "FarmAutoEggSlot")
+    farm:CreateSection({ name = "Nâng cấp Slot" })
+    createToggle(farm, "Auto Upd Pet Slot", "FarmAutoPetSlot")
+    createToggle(farm, "Auto Upd Egg Slot", "FarmAutoEggSlot")
 end
 
--- ============================================================================
 -- TAB: optimize
--- ============================================================================
 do
-    optimize:CreateSection({ name = "optimize" })
-    createToggle(optimize, "disable loot boxes", "OptimizeDisableLootBoxes")
-    createToggle(optimize, "disable objects", "OptimizeDisableObjects")
-    createToggle(optimize, "super optimize", "OptimizeSuper")
+    optimize:CreateSection({ name = "Tối ưu đồ họa" })
+    createToggle(optimize, "Disable Loot Boxes", "OptimizeDisableLootBoxes")
+    createToggle(optimize, "Disable Objects", "OptimizeDisableObjects")
+    createToggle(optimize, "Super Optimize", "OptimizeSuper")
 
-    -- Cấu hình giới hạn FPS của client.
     local fpsLimit = features.OptimizeFpsLimit
     local initialFps = "30"
     if fpsLimit and launchConfig and launchConfig.fpsTarget ~= nil then
@@ -544,7 +1562,7 @@ do
             initialFps = tostring(tonumber(launchConfig.fpsTarget))
         end
     end
-    optimize:CreateSection({ name = "FPS" })
+    optimize:CreateSection({ name = "Giới hạn FPS" })
     optimize:CreateInput({
         name = "Target FPS",
         flag = "OptimizeFpsTarget",
@@ -558,71 +1576,69 @@ do
     createToggle(optimize, "Limit FPS", "OptimizeFpsLimit")
 end
 
--- ============================================================================
 -- TAB: mail
--- ============================================================================
 do
-    mail:CreateSection({ name = "auto claim mail" })
+    mail:CreateSection({ name = "Auto Claim Mail" })
     createToggle(mail, "Tự nhận thư", "MailAutoClaim")
-     mail:CreateSection({ name = "auto gift" })
+
+    mail:CreateSection({ name = "Auto Gift" })
     local gift = features.MailAutoGift
-    if not gift then return end
-    local handlers = mailHandlers(gift)
-    local preset = launchConfig and launchConfig.mailGift
-    local recipient = type(preset) == "table" and type(preset.recipient) == "string" and preset.recipient or ""
-    mail:CreateInput({
-        name = "User Name",
-        flag = "MailUserName",
-        value = recipient,
-        placeholder = "...",
-        callback = gift.setRecipient,
-    })
+    if gift then
+        local handlers = mailHandlers(gift)
+        local preset = launchConfig and launchConfig.mailGift
+        local recipient = type(preset) == "table" and type(preset.recipient) == "string" and preset.recipient or ""
+        mail:CreateInput({
+            name = "User Name",
+            flag = "MailUserName",
+            value = recipient,
+            placeholder = "Tên người nhận...",
+            callback = gift.setRecipient,
+        })
 
-    mail:CreateDropdown({
-        name = "Item Class",
-        flag = "MailGiftClass",
-        options = gift.getClasses(),
-        multiSelect = false,
-        callback = handlers.selectClass,
-    })
-    handlers.itemDropdown = mail:CreateDropdown({
-        name = "Item ID",
-        flag = "MailGiftItem",
-        options = {},
-        multiSelect = false,
-    })
-    if handlers.selectedClass then handlers.selectClass(handlers.selectedClass) end
+        mail:CreateDropdown({
+            name = "Item Class",
+            flag = "MailGiftClass",
+            options = gift.getClasses(),
+            multiSelect = false,
+            callback = handlers.selectClass,
+        })
+        handlers.itemDropdown = mail:CreateDropdown({
+            name = "Item ID",
+            flag = "MailGiftItem",
+            options = {},
+            multiSelect = false,
+        })
+        if handlers.selectedClass then handlers.selectClass(handlers.selectedClass) end
 
-    handlers.amount = mail:CreateInput({
-        name = "Amount",
-        flag = "MailGiftAmount",
-        value = "",
-        placeholder = "Ví dụ: 100k",
-    })
-    handlers.keep = mail:CreateInput({
-        name = "Keep",
-        flag = "MailGiftKeep",
-        value = "",
-        placeholder = "Ví dụ: 10k hoặc 0",
-    })
-    handlers.text = mail:CreateText({ text = "Danh sách gift: (trống)" })
-    mail:CreateButton({
-        name = "Add Item",
-        flag = "MailGiftAddItem",
-        callback = handlers.add,
-    })
-    mail:CreateButton({
-        name = "Clear 1 Item",
-        flag = "MailGiftRemoveLast",
-        callback = handlers.removeLast,
-    })
-    handlers.restore(preset, recipient)
-    createToggle(mail, "auto gift", "MailAutoGift")
+        handlers.amount = mail:CreateInput({
+            name = "Amount",
+            flag = "MailGiftAmount",
+            value = "",
+            placeholder = "Ví dụ: 100k",
+        })
+        handlers.keep = mail:CreateInput({
+            name = "Keep",
+            flag = "MailGiftKeep",
+            value = "",
+            placeholder = "Ví dụ: 10k hoặc 0",
+        })
+        handlers.text = mail:CreateText({ text = "Danh sách gift: (trống)" })
+        mail:CreateButton({
+            name = "Add Item",
+            flag = "MailGiftAddItem",
+            callback = handlers.add,
+        })
+        mail:CreateButton({
+            name = "Clear 1 Item",
+            flag = "MailGiftRemoveLast",
+            callback = handlers.removeLast,
+        })
+        handlers.restore(preset, recipient)
+        createToggle(mail, "Auto Gift", "MailAutoGift")
+    end
 end
 
--- ============================================================================
 -- TAB: trading
--- ============================================================================
 do
     local boothSnipe = trading:CreateGroup({ direction = "column" })
     boothSnipe:CreateSection({ name = "Săn món ở gian hàng" })
@@ -646,7 +1662,6 @@ do
         local report = features.TradingWebhook
         if report then
             config = type(config) == "table" and config or {}
-            -- Nhập URL và số dư cảnh báo cho webhook giao dịch.
             trading:CreateInput({
                 name = "Trading Webhook URL",
                 flag = "TradingWebhookUrl",
@@ -668,27 +1683,22 @@ do
     if features.TradingAutoSell then createToggle(trading, "Auto Sell", "TradingAutoSell") end
 end
 
--- ============================================================================
 -- TAB: rank
--- ============================================================================
 do
-    createToggle(rank, "auto claim rank reward", "RankAutoClaimReward")
-    rank:CreateSection({ name = "auto quest" })
-    createToggle(rank, "auto rank quest", "RankAutoQuest")
-    createToggle(rank, "stats gui", "RankStatsGui")
+    rank:CreateSection({ name = "Phần thưởng & Nhiệm vụ Rank" })
+    createToggle(rank, "Auto Claim Rank Reward", "RankAutoClaimReward")
+    createToggle(rank, "Auto Rank Quest", "RankAutoQuest")
+    createToggle(rank, "Rank Stats GUI", "RankStatsGui")
 end
 
--- ============================================================================
 -- TAB: webhook
--- ============================================================================
 do
-    -- Webhook chung: URL, loại thông báo và nút điều khiển.
     local petWebhook = features.WebhookEnabled
     local petPreset = launchConfig and type(launchConfig.petWebhook) == "table" and launchConfig.petWebhook or {}
     local initialPetUrl = type(petPreset.url) == "string" and petPreset.url or ""
     local petOptions = petWebhook and petWebhook.getOptions() or {}
     local initialPetEvents = selectedOptions(petOptions, petPreset.events)
-    webhook:CreateSection({ name = "webhook" })
+    webhook:CreateSection({ name = "Webhook Pet" })
     webhook:CreateInput({
         name = "Webhook URL",
         flag = "WebhookUrl",
@@ -709,7 +1719,6 @@ do
             if petWebhook then petWebhook.setSelection(values) end
         end,
     })
-    -- Nạp URL và loại pet trước khi launcher bật webhook.
     if petWebhook and launchConfig then
         petWebhook.setUrl(initialPetUrl)
         petWebhook.setSelection(initialPetEvents)
@@ -723,12 +1732,11 @@ do
         end,
     })
 
-    -- Webhook Rank dùng URL và cấu hình riêng.
     local rankWebhook = features.RankWebhookEnabled
     local rankPreset = launchConfig and type(launchConfig.rankWebhook) == "table" and launchConfig.rankWebhook or {}
     local initialRankUrl = type(rankPreset.url) == "string" and rankPreset.url or ""
     local initialRankTarget = rankPreset.target ~= nil and tostring(rankPreset.target) or ""
-    webhook:CreateSection({ name = "webhook rank" })
+    webhook:CreateSection({ name = "Webhook Rank" })
     webhook:CreateInput({
         name = "Rank Webhook URL",
         flag = "RankWebhookUrl",
@@ -762,51 +1770,48 @@ do
     })
 end
 
--- ============================================================================
 -- TAB: automatic
--- ============================================================================
 do
-    -- Nhận quà online
-    createToggle(automatic, "auto claim free gift", "AutoClaimFreeGift")
+    automatic:CreateSection({ name = "Quà Online" })
+    createToggle(automatic, "Auto Claim Free Gift", "AutoClaimFreeGift")
 
-    -- Trang bị enchant
-    automatic:CreateSection({ name = "Enchant" })
+    automatic:CreateSection({ name = "Trang bị Enchant" })
     local enchantFeature = features.AutoEquipEnchant
-    local handlers = enchantHandlers(enchantFeature)
-
-    local hasEnchantNames, enchantNames = runInventoryAction(enchantFeature.getNames)
-    if not hasEnchantNames then
-        warn("[Enchant UI] " .. tostring(enchantNames))
-        enchantNames = {}
+    if enchantFeature then
+        local handlers = enchantHandlers(enchantFeature)
+        local hasEnchantNames, enchantNames = runInventoryAction(enchantFeature.getNames)
+        if not hasEnchantNames then
+            warn("[Enchant UI] " .. tostring(enchantNames))
+            enchantNames = {}
+        end
+        handlers.dropdown = automatic:CreateDropdown({
+            name = "Enchant",
+            flag = "AutoEnchantSelection",
+            multiSelect = false,
+            options = enchantNames,
+            callback = handlers.select,
+        })
+        handlers.text = automatic:CreateText({ text = "Enchant: (trống)" })
+        handlers.restore()
+        automatic:CreateButton({
+            name = "Add Enchant",
+            flag = "AutoEnchantAdd",
+            callback = handlers.add,
+        })
+        automatic:CreateButton({
+            name = "Clear Enchant",
+            flag = "AutoEnchantClear",
+            callback = handlers.clear,
+        })
+        createToggle(automatic, "Auto Equip Enchant", "AutoEquipEnchant")
     end
-    handlers.dropdown = automatic:CreateDropdown({
-        name = "Enchant",
-        flag = "AutoEnchantSelection",
-        multiSelect = false,
-        options = enchantNames,
-        callback = handlers.select,
-    })
-    handlers.text = automatic:CreateText({ text = "enchant : (trống)" })
-    handlers.restore()
-    automatic:CreateButton({
-        name = "add enchant",
-        flag = "AutoEnchantAdd",
-        callback = handlers.add,
-    })
-    automatic:CreateButton({
-        name = "clear enchant",
-        flag = "AutoEnchantClear",
-        callback = handlers.clear,
-    })
-    createToggle(automatic, "auto equip enchant", "AutoEquipEnchant")
 
-    -- Dọn vòng làm mới inventory còn chạy từ bản UI cũ.
     if environment.RobloxHubEnchantUiJob then
         pcall(task.cancel, environment.RobloxHubEnchantUiJob)
         environment.RobloxHubEnchantUiJob = nil
     end
 
-    -- Chọn loại và tự mở quà
+    automatic:CreateSection({ name = "Tự mở quà" })
     local giftFeature = features.AutoOpenGifts
     local giftOptions = giftFeature and giftFeature.getOptions and giftFeature.getOptions()
         or { "Gift Bag", "Large Gift Bag", "Mini Chest" }
@@ -829,17 +1834,19 @@ do
         callback = setGiftSelection,
     })
     if launchConfig then setGiftSelection(initialGifts) end
-    createToggle(automatic, "auto open gifts", "AutoOpenGifts")
+    createToggle(automatic, "Auto Open Gifts", "AutoOpenGifts")
 end
 
 -- ============================================================================
 -- 7. Áp dụng cấu hình sau khi tất cả control đã đăng ký
 -- ============================================================================
--- Áp dụng các toggle được launcher đặt sẵn.
-if launchConfig then ui:Apply(launchConfig.controls, "values") end
-for _, start in ipairs(startupActions) do start() end
 if launchConfig then
+    ui:Apply(launchConfig.controls, "values")
+    for _, start in ipairs(startupActions) do start() end
     ui:Apply(launchConfig.controls, "toggles")
     ui:Run(launchConfig.actions)
+else
+    for _, start in ipairs(startupActions) do start() end
+    ui:LoadLocalConfig()
 end
 ui.ready = true
