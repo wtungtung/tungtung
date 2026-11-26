@@ -1160,7 +1160,7 @@ local function buildModernHubUI(options)
 end
 
 local ui = buildModernHubUI({
-    name = "Menu Roblox",
+    name = "Mew 29HaNoi",
     autoSave = launchConfig == nil,
     autoLoad = launchConfig == nil,
     fileName = "RobloxHubUI",
