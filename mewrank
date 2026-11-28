@@ -1,5 +1,5 @@
 --// ============================================================================
---// PS99 Mobile & Delta Compatible Runtime | Mew 29 Hà Nội
+--// PS99 Mobile & Delta Ultra UI | ⚡ MEW 29 HÀ NỘI ⚡
 --// ============================================================================
 
 local env = (getgenv and getgenv()) or _G
@@ -52,147 +52,535 @@ env.Config = {
     },
 }
 
---// 2. Lõi Thực Thi & Tùy Biến Giao Diện (Mew 29 Hà Nội)
+--// 2. Khởi Tạo Dịch Vụ
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local setfpscap = setfpscap or function() end
-local BRAND_NAME = "Mew 29 Hà Nội"
 local AUTHOR_CREDIT = "Mew 29 Hà Nội"
-local DISPLAY_BRAND = "⚡ Mew 29 Hà Nội ⚡"
+local UI_NAME = "Mew29HaNoi_Dashboard"
 
 if type(env.Config.AutoMail.User) == "table" and env.Config.AutoMail.User[1] and env.Config.AutoMail.User[1] ~= "" then
     env.Config.AutoMail.Enable = true
 end
 
-local function ApplyStyle(obj)
-    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
-    local raw = obj.Text
-    if type(raw) ~= "string" or raw == "" then return end
+--// 3. Xây Dựng Giao Diện Mới (Cyber Obsidian Bento - Mew 29 Hà Nội)
+local function CreateMew29UI(localPlayer)
+    local guiParent = (gethui and gethui()) or CoreGui
+    local old = guiParent:FindFirstChild(UI_NAME)
+    if old then old:Destroy() end
 
-    local plainText = raw:gsub("<[^>]+>", "")
-    local lowerText = plainText:lower()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = UI_NAME
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.DisplayOrder = 99999
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent = guiParent
 
-    -- Bo góc & viền neon cho khung dashboard
-    local container = obj.Parent
-    if container and container:IsA("Frame") and not container:GetAttribute("Mew29Styled") then
-        if plainText:find("Hatching:") or lowerText:find("eblan") or lowerText:find("duchung") or lowerText:find("mew 29") or plainText:find("Quests:") then
-            container:SetAttribute("Mew29Styled", true)
-            container.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
-            container.BackgroundTransparency = 0.06
+    -- Nền toàn màn hình (che màn hình đen gọn đẹp khi bật CPU Saver)
+    local Backdrop = Instance.new("Frame")
+    Backdrop.Name = "Backdrop"
+    Backdrop.Size = UDim2.fromScale(1, 1)
+    Backdrop.BackgroundColor3 = Color3.fromRGB(7, 10, 18)
+    Backdrop.BackgroundTransparency = env.Config.CPUSaver and 0.04 or 0.35
+    Backdrop.BorderSizePixel = 0
+    Backdrop.Parent = ScreenGui
 
-            if not container:FindFirstChildOfClass("UICorner") then
-                local c = Instance.new("UICorner")
-                c.CornerRadius = UDim.new(0, 16)
-                c.Parent = container
-            end
-            if not container:FindFirstChildOfClass("UIStroke") then
-                local s = Instance.new("UIStroke")
-                s.Color = Color3.fromRGB(0, 240, 255)
-                s.Thickness = 2
-                s.Transparency = 0.2
-                s.Parent = container
-            end
-        end
+    local BgGrad = Instance.new("UIGradient")
+    BgGrad.Rotation = 135
+    BgGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 16, 30)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(7, 10, 18)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 11, 30)),
+    })
+    BgGrad.Parent = Backdrop
+
+    -- Khung Dashboard chính ở giữa màn hình
+    local MainCard = Instance.new("Frame")
+    MainCard.Name = "MainCard"
+    MainCard.AnchorPoint = Vector2.new(0.5, 0.5)
+    MainCard.Position = UDim2.fromScale(0.5, 0.5)
+    MainCard.Size = UDim2.new(0.92, 0, 0.86, 0)
+    MainCard.BackgroundColor3 = Color3.fromRGB(13, 18, 30)
+    MainCard.BackgroundTransparency = 0.05
+    MainCard.BorderSizePixel = 0
+    MainCard.Parent = Backdrop
+
+    local MainConstraint = Instance.new("UISizeConstraint")
+    MainConstraint.MaxSize = Vector2.new(680, 420)
+    MainConstraint.MinSize = Vector2.new(310, 260)
+    MainConstraint.Parent = MainCard
+
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 18)
+    MainCorner.Parent = MainCard
+
+    local MainStroke = Instance.new("UIStroke")
+    MainStroke.Thickness = 2
+    MainStroke.Color = Color3.fromRGB(255, 255, 255)
+    MainStroke.Transparency = 0.15
+    MainStroke.Parent = MainCard
+
+    local StrokeGrad = Instance.new("UIGradient")
+    StrokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 245, 212)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 187, 249)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(185, 100, 255)),
+    })
+    StrokeGrad.Parent = MainStroke
+
+    local MainPad = Instance.new("UIPadding")
+    MainPad.PaddingTop = UDim.new(0, 14)
+    MainPad.PaddingBottom = UDim.new(0, 14)
+    MainPad.PaddingLeft = UDim.new(0, 16)
+    MainPad.PaddingRight = UDim.new(0, 16)
+    MainPad.Parent = MainCard
+
+    -- Dải sáng Neon trang trí trên cùng
+    local TopAccent = Instance.new("Frame")
+    TopAccent.Size = UDim2.new(0.45, 0, 0, 3)
+    TopAccent.AnchorPoint = Vector2.new(0.5, 0)
+    TopAccent.Position = UDim2.new(0.5, 0, 0, -14)
+    TopAccent.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    TopAccent.BorderSizePixel = 0
+    TopAccent.Parent = MainCard
+    local AccentCorner = Instance.new("UICorner"); AccentCorner.CornerRadius = UDim.new(1, 0); AccentCorner.Parent = TopAccent
+    local AccentGrad = StrokeGrad:Clone(); AccentGrad.Parent = TopAccent
+
+    -- ================= HEADER =================
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 48)
+    Header.BackgroundTransparency = 1
+    Header.Parent = MainCard
+
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(0.65, 0, 0, 26)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Font = Enum.Font.GothamBlack
+    TitleLabel.Text = "⚡ MEW 29 HÀ NỘI ⚡"
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.TextSize = 21
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Parent = Header
+
+    local TitleGrad = Instance.new("UIGradient")
+    TitleGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 200)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(70, 210, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(215, 130, 255)),
+    })
+    TitleGrad.Parent = TitleLabel
+
+    local SubLabel = Instance.new("TextLabel")
+    SubLabel.Position = UDim2.new(0, 0, 0, 27)
+    SubLabel.Size = UDim2.new(0.65, 0, 0, 16)
+    SubLabel.BackgroundTransparency = 1
+    SubLabel.Font = Enum.Font.GothamMedium
+    SubLabel.Text = "PS99 Delta Edition  •  @" .. localPlayer.Name
+    SubLabel.TextColor3 = Color3.fromRGB(140, 158, 190)
+    SubLabel.TextSize = 12
+    SubLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SubLabel.Parent = Header
+
+    -- Khung Timer + Nút Thu Gọn bên phải
+    local RightControls = Instance.new("Frame")
+    RightControls.AnchorPoint = Vector2.new(1, 0.5)
+    RightControls.Position = UDim2.new(1, 0, 0.5, 0)
+    RightControls.Size = UDim2.new(0, 165, 0, 32)
+    RightControls.BackgroundTransparency = 1
+    RightControls.Parent = Header
+
+    local RightLayout = Instance.new("UIListLayout")
+    RightLayout.FillDirection = Enum.FillDirection.Horizontal
+    RightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    RightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    RightLayout.Padding = UDim.new(0, 8)
+    RightLayout.Parent = RightControls
+
+    local TimerPill = Instance.new("TextLabel")
+    TimerPill.Size = UDim2.new(0, 108, 0, 30)
+    TimerPill.BackgroundColor3 = Color3.fromRGB(22, 30, 48)
+    TimerPill.Font = Enum.Font.Code
+    TimerPill.Text = "⏱ 00:00:00"
+    TimerPill.TextColor3 = Color3.fromRGB(255, 215, 90)
+    TimerPill.TextSize = 13
+    TimerPill.Parent = RightControls
+    local tCorner = Instance.new("UICorner"); tCorner.CornerRadius = UDim.new(0, 10); tCorner.Parent = TimerPill
+    local tStroke = Instance.new("UIStroke"); tStroke.Color = Color3.fromRGB(255, 215, 90); tStroke.Transparency = 0.7; tStroke.Parent = TimerPill
+
+    local MinBtn = Instance.new("TextButton")
+    MinBtn.Size = UDim2.new(0, 34, 0, 30)
+    MinBtn.BackgroundColor3 = Color3.fromRGB(28, 36, 58)
+    MinBtn.Font = Enum.Font.GothamBlack
+    MinBtn.Text = "—"
+    MinBtn.TextColor3 = Color3.fromRGB(220, 235, 255)
+    MinBtn.TextSize = 15
+    MinBtn.AutoButtonColor = true
+    MinBtn.Parent = RightControls
+    local mCorner = Instance.new("UICorner"); mCorner.CornerRadius = UDim.new(0, 10); mCorner.Parent = MinBtn
+    local mStroke = Instance.new("UIStroke"); mStroke.Color = Color3.fromRGB(90, 120, 180); mStroke.Transparency = 0.5; mStroke.Parent = MinBtn
+
+    -- ================= HERO STATUS BANNER (HATCHING) =================
+    local HeroBanner = Instance.new("Frame")
+    HeroBanner.Position = UDim2.new(0, 0, 0, 58)
+    HeroBanner.Size = UDim2.new(1, 0, 0, 42)
+    HeroBanner.BackgroundColor3 = Color3.fromRGB(16, 26, 44)
+    HeroBanner.BorderSizePixel = 0
+    HeroBanner.Parent = MainCard
+    local hCorner = Instance.new("UICorner"); hCorner.CornerRadius = UDim.new(0, 12); hCorner.Parent = HeroBanner
+    local hStroke = Instance.new("UIStroke"); hStroke.Color = Color3.fromRGB(0, 245, 212); hStroke.Transparency = 0.55; hStroke.Parent = HeroBanner
+
+    local StatusDot = Instance.new("Frame")
+    StatusDot.AnchorPoint = Vector2.new(0, 0.5)
+    StatusDot.Position = UDim2.new(0, 14, 0.5, 0)
+    StatusDot.Size = UDim2.fromOffset(10, 10)
+    StatusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 160)
+    StatusDot.Parent = HeroBanner
+    local dCorner = Instance.new("UICorner"); dCorner.CornerRadius = UDim.new(1, 0); dCorner.Parent = StatusDot
+
+    local HatchingValue = Instance.new("TextLabel")
+    HatchingValue.Position = UDim2.new(0, 34, 0, 0)
+    HatchingValue.Size = UDim2.new(1, -46, 1, 0)
+    HatchingValue.BackgroundTransparency = 1
+    HatchingValue.Font = Enum.Font.GothamBold
+    HatchingValue.Text = "Đang khởi chạy & đồng bộ dữ liệu PS99..."
+    HatchingValue.TextColor3 = Color3.fromRGB(120, 255, 225)
+    HatchingValue.TextSize = 14
+    HatchingValue.TextXAlignment = Enum.TextXAlignment.Left
+    HatchingValue.TextTruncate = Enum.TextTruncate.AtEnd
+    HatchingValue.Parent = HeroBanner
+
+    -- ================= BENTO GRID (6 THẺ THÔNG SỐ) =================
+    local GridContainer = Instance.new("Frame")
+    GridContainer.Position = UDim2.new(0, 0, 0, 110)
+    GridContainer.Size = UDim2.new(1, 0, 1, -162)
+    GridContainer.BackgroundTransparency = 1
+    GridContainer.Parent = MainCard
+
+    local GridLayout = Instance.new("UIGridLayout")
+    GridLayout.CellPadding = UDim2.new(0, 10, 0, 10)
+    GridLayout.CellSize = UDim2.new(0.5, -5, 0.333, -7)
+    GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    GridLayout.Parent = GridContainer
+
+    local function CreateStatCard(order, title, defaultVal, accentColor)
+        local Card = Instance.new("Frame")
+        Card.LayoutOrder = order
+        Card.BackgroundColor3 = Color3.fromRGB(18, 24, 40)
+        Card.BorderSizePixel = 0
+        Card.Parent = GridContainer
+
+        local cCorner = Instance.new("UICorner"); cCorner.CornerRadius = UDim.new(0, 12); cCorner.Parent = Card
+        local cStroke = Instance.new("UIStroke"); cStroke.Color = accentColor; cStroke.Transparency = 0.72; cStroke.Thickness = 1.2; cStroke.Parent = Card
+
+        local AccentBar = Instance.new("Frame")
+        AccentBar.AnchorPoint = Vector2.new(0, 0.5)
+        AccentBar.Position = UDim2.new(0, 8, 0.5, 0)
+        AccentBar.Size = UDim2.new(0, 4, 0.62, 0)
+        AccentBar.BackgroundColor3 = accentColor
+        AccentBar.BorderSizePixel = 0
+        AccentBar.Parent = Card
+        local bCorner = Instance.new("UICorner"); bCorner.CornerRadius = UDim.new(1, 0); bCorner.Parent = AccentBar
+
+        local lblTitle = Instance.new("TextLabel")
+        lblTitle.Position = UDim2.new(0, 20, 0, 7)
+        lblTitle.Size = UDim2.new(1, -26, 0, 15)
+        lblTitle.BackgroundTransparency = 1
+        lblTitle.Font = Enum.Font.GothamBold
+        lblTitle.Text = title
+        lblTitle.TextColor3 = Color3.fromRGB(150, 168, 200)
+        lblTitle.TextSize = 11
+        lblTitle.TextXAlignment = Enum.TextXAlignment.Left
+        lblTitle.Parent = Card
+
+        local lblVal = Instance.new("TextLabel")
+        lblVal.Position = UDim2.new(0, 20, 0, 24)
+        lblVal.Size = UDim2.new(1, -26, 1, -28)
+        lblVal.BackgroundTransparency = 1
+        lblVal.Font = Enum.Font.GothamBold
+        lblVal.Text = defaultVal
+        lblVal.TextColor3 = Color3.fromRGB(240, 246, 255)
+        lblVal.TextSize = 13
+        lblVal.TextWrapped = true
+        lblVal.TextXAlignment = Enum.TextXAlignment.Left
+        lblVal.TextYAlignment = Enum.TextYAlignment.Top
+        lblVal.Parent = Card
+
+        return lblVal
     end
 
-    -- Thay thế chữ ký thương hiệu sang Mew 29 Hà Nội
-    if lowerText:find("eblan") or lowerText:find("duchung") or lowerText:find("mew 29") then
-        local cleanBrand = plainText
-            :gsub("[Mm]ade [Bb]y [Ee]blans%s*|?%s*gg/[Ee]blan%w*", DISPLAY_BRAND)
-            :gsub("[Mm]ade [Bb]y [Ee]blans", DISPLAY_BRAND)
-            :gsub("[Mm]ade [Bb]y [Dd]uc[Hh]ung", DISPLAY_BRAND)
-            :gsub("[Ee]blans?", BRAND_NAME)
-            :gsub("[Dd]uc[Hh]ung", BRAND_NAME)
-            :gsub("gg/[Ee]blan%w*", "")
-            :gsub("^%s*(.-)%s*$", "%1")
+    local ValGems = CreateStatCard(1, "💎 GEMS & BARS", "Đang chờ dữ liệu...", Color3.fromRGB(56, 215, 255))
+    local ValEggs = CreateStatCard(2, "🥚 TRỨNG ĐÃ ẤP", "0", Color3.fromRGB(80, 255, 175))
+    local ValZone = CreateStatCard(3, "🌍 KHU VỰC (ZONE)", "Đang cập nhật...", Color3.fromRGB(155, 130, 255))
+    local ValRank = CreateStatCard(4, "⭐ RANK & REBIRTH", "Đang cập nhật...", Color3.fromRGB(255, 195, 75))
+    local ValQuests = CreateStatCard(5, "📜 NHIỆM VỤ (QUESTS)", "Chưa có nhiệm vụ", Color3.fromRGB(255, 135, 90))
+    local ValSystem = CreateStatCard(6, "📬 AUTO MAIL & FPS", "Đang kiểm tra...", Color3.fromRGB(240, 100, 220))
 
-        if not cleanBrand:find(BRAND_NAME, 1, true) then
-            cleanBrand = DISPLAY_BRAND
-        end
+    -- ================= THANH ĐIỀU KHIỂN NHANH DƯỚI CÙNG =================
+    local Footer = Instance.new("Frame")
+    Footer.AnchorPoint = Vector2.new(0, 1)
+    Footer.Position = UDim2.new(0, 0, 1, 0)
+    Footer.Size = UDim2.new(1, 0, 0, 38)
+    Footer.BackgroundTransparency = 1
+    Footer.Parent = MainCard
 
-        obj.RichText = false
-        if obj.Text ~= cleanBrand then
-            obj.Text = cleanBrand
-        end
-        obj.Font = Enum.Font.GothamBlack
-        obj.TextColor3 = Color3.fromRGB(255, 255, 255)
+    local FooterLayout = Instance.new("UIListLayout")
+    FooterLayout.FillDirection = Enum.FillDirection.Horizontal
+    FooterLayout.HorizontalAlignment = Enum.HorizontalAlignment.SpaceBetween
+    FooterLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    FooterLayout.Padding = UDim.new(0, 8)
+    FooterLayout.Parent = Footer
 
-        if not obj:FindFirstChild("Mew29BrandGrad") then
-            local grad = Instance.new("UIGradient")
-            grad.Name = "Mew29BrandGrad"
-            grad.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 180)),
-                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 200, 255)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(215, 100, 255)),
-            })
-            grad.Parent = obj
-        end
-        return
+    local function CreateActionBtn(text, color)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.32, 0, 1, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(22, 30, 48)
+        btn.Font = Enum.Font.GothamBold
+        btn.Text = text
+        btn.TextColor3 = color
+        btn.TextSize = 12
+        btn.AutoButtonColor = true
+        btn.Parent = Footer
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = btn
+        local s = Instance.new("UIStroke"); s.Color = color; s.Transparency = 0.55; s.Thickness = 1.2; s.Parent = btn
+        return btn, s
     end
 
-    -- Tùy chỉnh màu chữ các dòng thông số
-    if plainText:find("^Hatching:") then
-        obj.RichText = false
-        obj.Font = Enum.Font.GothamBlack
-        obj.TextColor3 = Color3.fromRGB(100, 255, 220)
-    elseif plainText:match("^%d%d:%d%d:%d%d$") then
-        obj.RichText = false
-        obj.Font = Enum.Font.Code
-        obj.TextColor3 = Color3.fromRGB(255, 210, 50)
-    elseif plainText:find("Gems:") or plainText:find("Bars:") then
-        obj.RichText = false
-        obj.Font = Enum.Font.GothamBold
-        obj.TextColor3 = Color3.fromRGB(60, 220, 255)
-    elseif plainText:find("Zone:") or plainText:find("Rebirth:") or plainText:find("Rank:") then
-        obj.RichText = false
-        obj.Font = Enum.Font.GothamSemibold
-        obj.TextColor3 = Color3.fromRGB(230, 240, 255)
-    elseif plainText:find("Hatched Eggs:") then
-        obj.RichText = false
-        obj.Font = Enum.Font.GothamBold
-        obj.TextColor3 = Color3.fromRGB(90, 255, 180)
-    elseif plainText:find("^Quests:") then
-        obj.RichText = false
-        obj.Font = Enum.Font.GothamMedium
-        obj.TextColor3 = Color3.fromRGB(255, 160, 60)
-    end
-end
+    local BtnCPU, StrokeCPU = CreateActionBtn(
+        env.Config.CPUSaver and "⚡ 3D Render: TẮT" or "⚡ 3D Render: BẬT",
+        env.Config.CPUSaver and Color3.fromRGB(80, 255, 175) or Color3.fromRGB(255, 195, 75)
+    )
+    local BtnMail, StrokeMail = CreateActionBtn(
+        env.Config.AutoMail.Enable and "📬 AutoMail: BẬT" or "📬 AutoMail: TẮT",
+        env.Config.AutoMail.Enable and Color3.fromRGB(80, 220, 255) or Color3.fromRGB(170, 180, 200)
+    )
+    local BtnOrig, StrokeOrig = CreateActionBtn("👁 UI Gốc: ẨN", Color3.fromRGB(200, 150, 255))
 
-local function HookElement(obj)
-    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
-    if obj:GetAttribute("Mew29Hooked") then return end
-    obj:SetAttribute("Mew29Hooked", true)
+    -- ================= NÚT VIÊN THUỐC NỔI KHI THU GỌN (KÉO THẢ ĐƯỢC) =================
+    local FloatBtn = Instance.new("TextButton")
+    FloatBtn.Name = "Mew29FloatPill"
+    FloatBtn.Visible = false
+    FloatBtn.Position = UDim2.new(0, 18, 0, 70)
+    FloatBtn.Size = UDim2.new(0, 156, 0, 38)
+    FloatBtn.BackgroundColor3 = Color3.fromRGB(13, 18, 30)
+    FloatBtn.Font = Enum.Font.GothamBlack
+    FloatBtn.Text = "⚡ Mew 29 Hà Nội"
+    FloatBtn.TextColor3 = Color3.fromRGB(0, 245, 212)
+    FloatBtn.TextSize = 13
+    FloatBtn.Parent = ScreenGui
+    local fCorner = Instance.new("UICorner"); fCorner.CornerRadius = UDim.new(1, 0); fCorner.Parent = FloatBtn
+    local fStroke = Instance.new("UIStroke"); fStroke.Color = Color3.fromRGB(0, 220, 255); fStroke.Thickness = 2; fStroke.Parent = FloatBtn
 
-    pcall(ApplyStyle, obj)
-    obj:GetPropertyChangedSignal("Text"):Connect(function()
-        pcall(ApplyStyle, obj)
+    -- Hỗ trợ kéo thả nút nổi trên cả Mobile & PC
+    local dragging, dragStart, startPos, moved = false, nil, nil, false
+    FloatBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            moved = false
+            dragStart = input.Position
+            startPos = FloatBtn.Position
+        end
     end)
-end
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            if delta.Magnitude > 6 then moved = true end
+            FloatBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
 
-local function WatchGuiRoot(root)
-    if not root then return end
+    -- Sự kiện đóng/mở giao diện
+    MinBtn.MouseButton1Click:Connect(function()
+        Backdrop.Visible = false
+        FloatBtn.Visible = true
+    end)
+    FloatBtn.MouseButton1Click:Connect(function()
+        if moved then return end
+        FloatBtn.Visible = false
+        Backdrop.Visible = true
+    end)
+
+    -- Trạng thái đồng bộ dữ liệu
+    local state = {
+        gems = nil,
+        bars = nil,
+        zone = nil,
+        rank = nil,
+        rebirth = nil,
+        origGui = nil,
+        showOrig = false,
+        startTick = os.clock(),
+        hasRemoteTimer = false,
+    }
+
+    local function RefreshSystemCard(fps)
+        local target = (type(env.Config.AutoMail.User) == "table" and env.Config.AutoMail.User[1]) or ""
+        local mailTxt = env.Config.AutoMail.Enable and ("BẬT -> " .. (target ~= "" and target or "Chưa nhập tên")) or "TẮT"
+        ValSystem.Text = string.format("Mail: %s\nFPS: %d / Cap %d", mailTxt, fps or env.Config.FPSCap, env.Config.FPSCap)
+    end
+
+    BtnCPU.MouseButton1Click:Connect(function()
+        env.Config.CPUSaver = not env.Config.CPUSaver
+        pcall(function() RunService:Set3dRenderingEnabled(not env.Config.CPUSaver) end)
+        Backdrop.BackgroundTransparency = env.Config.CPUSaver and 0.04 or 0.35
+        BtnCPU.Text = env.Config.CPUSaver and "⚡ 3D Render: TẮT" or "⚡ 3D Render: BẬT"
+        local col = env.Config.CPUSaver and Color3.fromRGB(80, 255, 175) or Color3.fromRGB(255, 195, 75)
+        BtnCPU.TextColor3 = col
+        StrokeCPU.Color = col
+    end)
+
+    BtnMail.MouseButton1Click:Connect(function()
+        env.Config.AutoMail.Enable = not env.Config.AutoMail.Enable
+        BtnMail.Text = env.Config.AutoMail.Enable and "📬 AutoMail: BẬT" or "📬 AutoMail: TẮT"
+        local col = env.Config.AutoMail.Enable and Color3.fromRGB(80, 220, 255) or Color3.fromRGB(170, 180, 200)
+        BtnMail.TextColor3 = col
+        StrokeMail.Color = col
+        RefreshSystemCard()
+    end)
+
+    BtnOrig.MouseButton1Click:Connect(function()
+        state.showOrig = not state.showOrig
+        BtnOrig.Text = state.showOrig and "👁 UI Gốc: HIỆN" or "👁 UI Gốc: ẨN"
+        if state.origGui and state.origGui.Parent then
+            state.origGui.Enabled = state.showOrig
+        end
+    end)
+
+    -- Cập nhật bộ đếm thời gian & FPS nhẹ nhàng mỗi 1 giây
+    local frameCount = 0
+    RunService.RenderStepped:Connect(function()
+        frameCount += 1
+    end)
     task.spawn(function()
-        pcall(function()
-            local descendants = root:GetDescendants()
-            for i, d in ipairs(descendants) do
-                HookElement(d)
-                if i % 150 == 0 then task.wait() end
+        local pulse = false
+        while ScreenGui.Parent do
+            task.wait(1)
+            local currentFps = frameCount
+            frameCount = 0
+            RefreshSystemCard(currentFps)
+
+            if not state.hasRemoteTimer then
+                local elapsed = math.floor(os.clock() - state.startTick)
+                local h = math.floor(elapsed / 3600)
+                local m = math.floor((elapsed % 3600) / 60)
+                local s = elapsed % 60
+                TimerPill.Text = string.format("⏱ %02d:%02d:%02d", h, m, s)
             end
-            root.DescendantAdded:Connect(HookElement)
-        end)
+
+            pulse = not pulse
+            StatusDot.BackgroundTransparency = pulse and 0.45 or 0
+        end
     end)
+
+    -- Hàm đọc dữ liệu từ UI gốc & ẩn UI gốc tự động
+    local function SyncFromOriginalLabel(obj)
+        if obj:IsDescendantOf(ScreenGui) then return end
+        if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
+        local raw = obj.Text
+        if type(raw) ~= "string" or raw == "" then return end
+
+        local plain = raw:gsub("<[^>]+>", ""):gsub("^%s*(.-)%s*$", "%1")
+        local lower = plain:lower()
+
+        -- Nhận diện ScreenGui của script gốc để ẩn gọn
+        if plain:find("Hatching:") or plain:find("Hatched Eggs:") or plain:find("^Quests:") or lower:find("eblan") then
+            local sg = obj:FindFirstAncestorOfClass("ScreenGui")
+            if sg and sg ~= ScreenGui then
+                state.origGui = sg
+                if not state.showOrig then
+                    sg.Enabled = false
+                end
+            end
+        end
+
+        -- Phân loại dữ liệu đưa lên các thẻ Bento
+        if plain:find("^Hatching:") then
+            HatchingValue.Text = plain
+        elseif plain:match("^%d%d:%d%d:%d%d$") then
+            state.hasRemoteTimer = true
+            TimerPill.Text = "⏱ " .. plain
+        elseif plain:find("Gems:") or plain:find("Bars:") then
+            if plain:find("Gems:") and plain:find("Bars:") then
+                ValGems.Text = plain
+            elseif plain:find("Gems:") then
+                state.gems = plain
+                ValGems.Text = state.bars and (state.gems .. "\n" .. state.bars) or state.gems
+            elseif plain:find("Bars:") then
+                state.bars = plain
+                ValGems.Text = state.gems and (state.gems .. "\n" .. state.bars) or state.bars
+            end
+        elseif plain:find("Hatched Eggs:") then
+            ValEggs.Text = plain:gsub("^Hatched Eggs:%s*", "")
+        elseif plain:find("Zone:") then
+            state.zone = plain
+            ValZone.Text = plain:gsub("^Zone:%s*", "")
+        elseif plain:find("Rank:") or plain:find("Rebirth:") then
+            if plain:find("Rank:") and plain:find("Rebirth:") then
+                ValRank.Text = plain
+            elseif plain:find("Rank:") then
+                state.rank = plain
+                ValRank.Text = state.rebirth and (state.rank .. "\n" .. state.rebirth) or state.rank
+            elseif plain:find("Rebirth:") then
+                state.rebirth = plain
+                ValRank.Text = state.rank and (state.rank .. "\n" .. state.rebirth) or state.rebirth
+            end
+        elseif plain:find("^Quests:") then
+            ValQuests.Text = plain:gsub("^Quests:%s*", "")
+        end
+    end
+
+    local function HookOriginalElement(obj)
+        if obj:IsDescendantOf(ScreenGui) then return end
+        if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
+        if obj:GetAttribute("Mew29Synced") then return end
+        obj:SetAttribute("Mew29Synced", true)
+
+        pcall(SyncFromOriginalLabel, obj)
+        obj:GetPropertyChangedSignal("Text"):Connect(function()
+            pcall(SyncFromOriginalLabel, obj)
+        end)
+    end
+
+    local function WatchRoot(root)
+        if not root then return end
+        task.spawn(function()
+            pcall(function()
+                for i, d in ipairs(root:GetDescendants()) do
+                    HookOriginalElement(d)
+                    if i % 150 == 0 then task.wait() end
+                end
+                root.DescendantAdded:Connect(HookOriginalElement)
+            end)
+        end)
+    end
+
+    WatchRoot(CoreGui)
+    local hui = gethui and gethui()
+    if hui and hui ~= CoreGui then
+        WatchRoot(hui)
+    end
 end
 
+--// 4. Thực Thi Hệ Thống (Anti-AFK, Auto Mail, Payload Chính)
 task.spawn(function()
     local localPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+
     pcall(function() setfpscap(env.Config.FPSCap) end)
     if env.Config.CPUSaver then
         pcall(function() RunService:Set3dRenderingEnabled(false) end)
     end
+
+    pcall(CreateMew29UI, localPlayer)
 
     localPlayer.Idled:Connect(function()
         pcall(function()
@@ -200,13 +588,6 @@ task.spawn(function()
             VirtualUser:ClickButton2(Vector2.new())
         end)
     end)
-
-    -- Theo dõi cả CoreGui và gethui() (Delta thường tạo UI trong gethui)
-    WatchGuiRoot(CoreGui)
-    local hui = gethui and gethui()
-    if hui and hui ~= CoreGui then
-        WatchGuiRoot(hui)
-    end
 
     -- Vòng lặp Auto Claim Mail
     task.spawn(function()
@@ -272,7 +653,7 @@ task.spawn(function()
     end)
 end)
 
--- Tải trực tiếp payload chính
+-- Tải payload chính
 pcall(function()
     local ok, src = pcall(function()
         return game:HttpGet("https://api.luarmor.net/files/v4/loaders/4f8f7464be96cf9a78297a6f67f9be6e.lua")
