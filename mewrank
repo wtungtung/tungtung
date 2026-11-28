@@ -1,0 +1,284 @@
+--// ============================================================================
+--// PS99 Mobile & Delta Compatible Runtime | Mew 29 Hà Nội
+--// ============================================================================
+
+local env = (getgenv and getgenv()) or _G
+
+--// 1. Bảng Cấu Hình Mở
+env.Config = {
+    FPSCap = 30,
+    CPUSaver = true,
+    Enchants = { "Criticals", "Tap Power", "Tap Power", "Criticals", "Treasure Hunter", "Lucky Eggs" },
+    AutoOpen = {
+        "Charm Stone", "Large Gift Bag", "Gift Bag", "Potion Bundle",
+        "Enchant Bundle", "Toy Bundle", "Fruit Bundle", "Flag Bundle",
+        "Large Enchant Bundle", "Large Potion Bundle", "Mini Chest",
+    },
+    Lootbox = {},
+    Potions = { "Diamonds", "Damage", "Treasure Hunter", "Lucky", "Walkspeed", "Coins", "The Cocktail" },
+    ConsumeFlag = { "Hasty Flag", "Fortune Flag" },
+    UseSprinkler = true,
+    UltraMasteryPot = "Pets",
+    AutoRank = { Enable = true, FastRank = 9 },
+    AutoUsePartyBox = false,
+    BuyUpgrades = { Enabled = true, MaxCosts = 1000000 },
+    TimeTrials = {
+        Enable = false,
+        OpenChests = { 1, 2, 3 },
+    },
+    AutoClaimMail = {
+        Enable = true,
+        CheckInterval = 15,
+    },
+    AutoMail = {
+        Enable = false, -- Tự bật khi điền tên nick nhận vào ô User bên dưới
+        SendAllHuges = true,
+        SendInterval = 45,
+        User = { "" }, -- Điền tên nick nhận đồ vào đây
+        Items = {
+            ["Diamonds"] = { Class = "Currency", Amount = 10000000 },
+            ["Charm Stone"] = { Class = "Misc", Amount = 50 },
+            ["Mini Chest"] = { Class = "Misc", Amount = 20 },
+        },
+    },
+    Webhook = {
+        Enable = false,
+        HugeWebhookURL = "",
+        TitanicWebhookURL = "",
+        GargantuanWebhookURL = "",
+        RankWebhookURL = "",
+        TimeTrialWebhookURL = "",
+        DiscordID = "",
+    },
+}
+
+--// 2. Lõi Thực Thi & Tùy Biến Giao Diện (Mew 29 Hà Nội)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local setfpscap = setfpscap or function() end
+local BRAND_NAME = "Mew 29 Hà Nội"
+local AUTHOR_CREDIT = "Mew 29 Hà Nội"
+local DISPLAY_BRAND = "⚡ Mew 29 Hà Nội ⚡"
+
+if type(env.Config.AutoMail.User) == "table" and env.Config.AutoMail.User[1] and env.Config.AutoMail.User[1] ~= "" then
+    env.Config.AutoMail.Enable = true
+end
+
+local function ApplyStyle(obj)
+    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
+    local raw = obj.Text
+    if type(raw) ~= "string" or raw == "" then return end
+
+    local plainText = raw:gsub("<[^>]+>", "")
+    local lowerText = plainText:lower()
+
+    -- Bo góc & viền neon cho khung dashboard
+    local container = obj.Parent
+    if container and container:IsA("Frame") and not container:GetAttribute("Mew29Styled") then
+        if plainText:find("Hatching:") or lowerText:find("eblan") or lowerText:find("duchung") or lowerText:find("mew 29") or plainText:find("Quests:") then
+            container:SetAttribute("Mew29Styled", true)
+            container.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
+            container.BackgroundTransparency = 0.06
+
+            if not container:FindFirstChildOfClass("UICorner") then
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(0, 16)
+                c.Parent = container
+            end
+            if not container:FindFirstChildOfClass("UIStroke") then
+                local s = Instance.new("UIStroke")
+                s.Color = Color3.fromRGB(0, 240, 255)
+                s.Thickness = 2
+                s.Transparency = 0.2
+                s.Parent = container
+            end
+        end
+    end
+
+    -- Thay thế chữ ký thương hiệu sang Mew 29 Hà Nội
+    if lowerText:find("eblan") or lowerText:find("duchung") or lowerText:find("mew 29") then
+        local cleanBrand = plainText
+            :gsub("[Mm]ade [Bb]y [Ee]blans%s*|?%s*gg/[Ee]blan%w*", DISPLAY_BRAND)
+            :gsub("[Mm]ade [Bb]y [Ee]blans", DISPLAY_BRAND)
+            :gsub("[Mm]ade [Bb]y [Dd]uc[Hh]ung", DISPLAY_BRAND)
+            :gsub("[Ee]blans?", BRAND_NAME)
+            :gsub("[Dd]uc[Hh]ung", BRAND_NAME)
+            :gsub("gg/[Ee]blan%w*", "")
+            :gsub("^%s*(.-)%s*$", "%1")
+
+        if not cleanBrand:find(BRAND_NAME, 1, true) then
+            cleanBrand = DISPLAY_BRAND
+        end
+
+        obj.RichText = false
+        if obj.Text ~= cleanBrand then
+            obj.Text = cleanBrand
+        end
+        obj.Font = Enum.Font.GothamBlack
+        obj.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+        if not obj:FindFirstChild("Mew29BrandGrad") then
+            local grad = Instance.new("UIGradient")
+            grad.Name = "Mew29BrandGrad"
+            grad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 180)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 200, 255)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(215, 100, 255)),
+            })
+            grad.Parent = obj
+        end
+        return
+    end
+
+    -- Tùy chỉnh màu chữ các dòng thông số
+    if plainText:find("^Hatching:") then
+        obj.RichText = false
+        obj.Font = Enum.Font.GothamBlack
+        obj.TextColor3 = Color3.fromRGB(100, 255, 220)
+    elseif plainText:match("^%d%d:%d%d:%d%d$") then
+        obj.RichText = false
+        obj.Font = Enum.Font.Code
+        obj.TextColor3 = Color3.fromRGB(255, 210, 50)
+    elseif plainText:find("Gems:") or plainText:find("Bars:") then
+        obj.RichText = false
+        obj.Font = Enum.Font.GothamBold
+        obj.TextColor3 = Color3.fromRGB(60, 220, 255)
+    elseif plainText:find("Zone:") or plainText:find("Rebirth:") or plainText:find("Rank:") then
+        obj.RichText = false
+        obj.Font = Enum.Font.GothamSemibold
+        obj.TextColor3 = Color3.fromRGB(230, 240, 255)
+    elseif plainText:find("Hatched Eggs:") then
+        obj.RichText = false
+        obj.Font = Enum.Font.GothamBold
+        obj.TextColor3 = Color3.fromRGB(90, 255, 180)
+    elseif plainText:find("^Quests:") then
+        obj.RichText = false
+        obj.Font = Enum.Font.GothamMedium
+        obj.TextColor3 = Color3.fromRGB(255, 160, 60)
+    end
+end
+
+local function HookElement(obj)
+    if not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return end
+    if obj:GetAttribute("Mew29Hooked") then return end
+    obj:SetAttribute("Mew29Hooked", true)
+
+    pcall(ApplyStyle, obj)
+    obj:GetPropertyChangedSignal("Text"):Connect(function()
+        pcall(ApplyStyle, obj)
+    end)
+end
+
+local function WatchGuiRoot(root)
+    if not root then return end
+    task.spawn(function()
+        pcall(function()
+            local descendants = root:GetDescendants()
+            for i, d in ipairs(descendants) do
+                HookElement(d)
+                if i % 150 == 0 then task.wait() end
+            end
+            root.DescendantAdded:Connect(HookElement)
+        end)
+    end)
+end
+
+task.spawn(function()
+    local localPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+    pcall(function() setfpscap(env.Config.FPSCap) end)
+    if env.Config.CPUSaver then
+        pcall(function() RunService:Set3dRenderingEnabled(false) end)
+    end
+
+    localPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end)
+
+    -- Theo dõi cả CoreGui và gethui() (Delta thường tạo UI trong gethui)
+    WatchGuiRoot(CoreGui)
+    local hui = gethui and gethui()
+    if hui and hui ~= CoreGui then
+        WatchGuiRoot(hui)
+    end
+
+    -- Vòng lặp Auto Claim Mail
+    task.spawn(function()
+        while true do
+            task.wait(env.Config.AutoClaimMail.CheckInterval or 15)
+            if env.Config.AutoClaimMail.Enable then
+                pcall(function()
+                    local net = ReplicatedStorage:FindFirstChild("Network")
+                    local claimAll = net and net:FindFirstChild("Mailbox: Claim All")
+                    if claimAll and claimAll:IsA("RemoteFunction") then
+                        claimAll:InvokeServer()
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- Vòng lặp Auto Send Mail
+    task.spawn(function()
+        while true do
+            task.wait(env.Config.AutoMail.SendInterval or 45)
+            local target = env.Config.AutoMail.User and env.Config.AutoMail.User[1]
+            if env.Config.AutoMail.Enable and target and target ~= "" and target:lower() ~= localPlayer.Name:lower() then
+                pcall(function()
+                    local net = ReplicatedStorage:FindFirstChild("Network")
+                    local sendFn = net and net:FindFirstChild("Mailbox: Send")
+                    local saveMod = ReplicatedStorage:FindFirstChild("Library")
+                        and ReplicatedStorage.Library:FindFirstChild("Client")
+                        and ReplicatedStorage.Library.Client:FindFirstChild("Save")
+                    if not (sendFn and saveMod) then return end
+
+                    local saveData = require(saveMod).Get()
+                    if type(saveData) ~= "table" or type(saveData.Inventory) ~= "table" then return end
+
+                    if env.Config.AutoMail.SendAllHuges and type(saveData.Inventory.Pet) == "table" then
+                        for uuid, pet in pairs(saveData.Inventory.Pet) do
+                            if type(pet) == "table" and type(pet.id) == "string" and pet.id:find("^Huge ") and not pet._lk then
+                                pcall(function() sendFn:InvokeServer(target, AUTHOR_CREDIT, "Pet", uuid, 1) end)
+                                task.wait(1.2)
+                            end
+                        end
+                    end
+
+                    if type(env.Config.AutoMail.Items) == "table" then
+                        for itemName, rule in pairs(env.Config.AutoMail.Items) do
+                            local bucket = saveData.Inventory[rule.Class]
+                            if type(bucket) == "table" then
+                                for uuid, entry in pairs(bucket) do
+                                    if type(entry) == "table" and entry.id == itemName and not entry._lk then
+                                        local qty = tonumber(entry._am) or 1
+                                        if qty >= rule.Amount then
+                                            pcall(function() sendFn:InvokeServer(target, AUTHOR_CREDIT, rule.Class, uuid, qty) end)
+                                            task.wait(1.2)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+end)
+
+-- Tải trực tiếp payload chính
+pcall(function()
+    local ok, src = pcall(function()
+        return game:HttpGet("https://api.luarmor.net/files/v4/loaders/4f8f7464be96cf9a78297a6f67f9be6e.lua")
+    end)
+    if ok and type(src) == "string" and #src > 0 then
+        local fn = loadstring(src)
+        if fn then fn() end
+    end
+end)
